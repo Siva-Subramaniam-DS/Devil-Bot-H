@@ -295,10 +295,6 @@ class TakeScheduleButton(View):
             button.disabled = True
             button.emoji = "✅"
             
-            # Enable release button for the assigned judge
-            release_button = self.children[1]  # Second button (Release Schedule)
-            release_button.disabled = False
-            
             # Update the embed
             embed = interaction.message.embeds[0]
             embed.color = discord.Color.green()
@@ -308,7 +304,7 @@ class TakeScheduleButton(View):
                 await interaction.followup.send("❌ Failed to update embed with judge information.", ephemeral=True)
                 return
             
-            # Update the message with both buttons (take and release)
+            # Update the message with the updated take button only
             await interaction.message.edit(embed=embed, view=self)
             
             # Send success message
@@ -330,76 +326,6 @@ class TakeScheduleButton(View):
             # Reset flag after processing
             self._taking_schedule = False
 
-    @discord.ui.button(label="Release Schedule", style=discord.ButtonStyle.red, emoji="🔓", row=1, disabled=True)
-    async def release_schedule(self, interaction: discord.Interaction, button: Button):
-        # Check if user has Judge or Head Organizer role
-        head_organizer_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_organizer"])
-        judge_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["judge"])
-        if not (head_organizer_role or judge_role):
-            await interaction.response.send_message("❌ You need **Head Organizer** or **Judge** role to release this schedule.", ephemeral=True)
-            return
-            
-        # Check if there's a judge assigned
-        if not self.judge:
-            await interaction.response.send_message("❌ No judge is currently assigned to this schedule.", ephemeral=True)
-            return
-            
-        # Check if the user is the assigned judge
-        if self.judge.id != interaction.user.id:
-            await interaction.response.send_message(f"❌ Only {self.judge.display_name} can release this schedule.", ephemeral=True)
-            return
-        
-        try:
-            # Defer response to give us time to process
-            await interaction.response.defer(ephemeral=True)
-            
-            # Store the judge for notification
-            released_judge = self.judge
-            
-            # Remove judge assignment
-            remove_judge_assignment(self.judge.id, self.event_id)
-            
-            # Reset judge
-            self.judge = None
-            
-            # Update button appearance
-            take_button = self.children[0]  # First button (Take Schedule)
-            take_button.label = "Take Schedule"
-            take_button.style = discord.ButtonStyle.green
-            take_button.disabled = False
-            take_button.emoji = "📋"
-            
-            # Hide release button
-            button.label = "Released"
-            button.style = discord.ButtonStyle.gray
-            button.disabled = True
-            button.emoji = "✅"
-            
-            # Update the embed
-            embed = interaction.message.embeds[0]
-            embed.color = discord.Color.blue()
-            
-            # Remove judge field
-            remove_judge_field(embed)
-            
-            # Update the message
-            await interaction.message.edit(embed=embed, view=self)
-            
-            # Send success message
-            await interaction.followup.send("✅ You have successfully released this schedule!", ephemeral=True)
-            
-            # Send notification to the event channel
-            await self.send_judge_release_notification(released_judge)
-            
-            # Update scheduled events
-            if self.event_id in scheduled_events:
-                scheduled_events[self.event_id]['judge'] = None
-            
-        except Exception as e:
-            print(f"Error in release_schedule: {e}")
-            await interaction.followup.send(f"❌ An error occurred while releasing the schedule: {str(e)}", ephemeral=True)
-    
-    
     
     async def send_judge_assignment_notification(self, judge: discord.Member):
         """Send notification to the event channel when a judge is assigned and add judge to channel"""
@@ -451,44 +377,7 @@ class TakeScheduleButton(View):
         except Exception as e:
             print(f"Error sending judge assignment notification: {e}")
     
-    async def send_judge_release_notification(self, released_judge: discord.Member):
-        """Send notification to the event channel when a judge releases the schedule and remove judge from channel"""
-        if not self.event_channel:
-            return
-        
-        try:
-            # Remove judge from the event channel by resetting permissions
-            await self.event_channel.set_permissions(released_judge, overwrite=None)
-            
-            # Create notification embed
-            embed = discord.Embed(
-                title="🔓 Judge Released Schedule",
-                description=f"**{released_judge.display_name}** has released the judge assignment for this match.",
-                color=discord.Color.orange(),
-                timestamp=discord.utils.utcnow()
-            )
-            
-            embed.add_field(
-                name="📋 Match Details",
-                value=f"**Team 1:** {self.team1_captain.display_name} `@{self.team1_captain.name}`\n**Team 2:** {self.team2_captain.display_name} `@{self.team2_captain.name}`",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="🔍 Status",
-                value="**Looking for a new judge!**\nThis match is now available for other judges to take.\n❌ **Judge removed from channel**",
-                inline=False
-            )
-            
-            embed.set_footer(text="Judge Release • 😈The Devil's Spot😈")
-            
-            # Send notification to the event channel
-            await self.event_channel.send(embed=embed)
-            
-        except discord.Forbidden:
-            print(f"Error: Bot doesn't have permission to remove {released_judge.display_name} from channel {self.event_channel.name}")
-        except Exception as e:
-            print(f"Error sending judge release notification: {e}")
+    
 
 
 
@@ -1427,6 +1316,10 @@ async def event_create(
                 f"{date:02d}/{month:02d}/{current_year}",
                 tournament
             )
+            if poster_image:
+                # Keep poster path for later cleanup/deletion
+                scheduled_events[event_id]['poster_path'] = poster_image
+                save_scheduled_events()
         except Exception as e:
             print(f"Error creating poster: {e}")
             poster_image = None
