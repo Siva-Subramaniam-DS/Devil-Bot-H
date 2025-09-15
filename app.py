@@ -16,6 +16,7 @@ from PIL import Image, ImageDraw, ImageFont
 # Removed pilmoji import due to dependency issues
 import io
 import json
+from pathlib import Path
 
 # Load environment variables
 load_dotenv()
@@ -830,21 +831,39 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
             
             # Try to load two font families: display (distressed/stencil) and digital (seven-segment)
             try:
-                # Candidate font files on Windows
-                display_candidates = [
-                    "C:/Windows/Fonts/Capture_it.ttf",
-                    "C:/Windows/Fonts/HeadlinerNo45.ttf",
-                    "C:/Windows/Fonts/Army_Rust.ttf",
+                # Helper to expand bundled font paths
+                def add_bundled(font_names: list[str]) -> list[str]:
+                    candidates = []
+                    for name in font_names:
+                        candidates.append(str(Path("Fonts") / name))
+                        candidates.append(str(Path("fonts") / name))
+                        candidates.append(name)  # allow absolute or cwd
+                    return candidates
+
+                # Prefer bundled fonts first (place .ttf files in Fonts/)
+                display_candidates = add_bundled([
+                    "Capture_it.ttf",
+                    "HeadlinerNo45.ttf",
+                    "Army_Rust.ttf",
+                    "stencil.ttf",
+                ]) + [
+                    # System fallbacks
                     "C:/Windows/Fonts/stencil.ttf",
                     "C:/Windows/Fonts/impact.ttf",
                     "C:/Windows/Fonts/arialbd.ttf",
                 ]
-                digital_candidates = [
-                    "C:/Windows/Fonts/digital-7 (mono).ttf",
-                    "C:/Windows/Fonts/digital-7.ttf",
-                    "C:/Windows/Fonts/DS-DIGIB.ttf",
-                    "C:/Windows/Fonts/DS-DIGII.ttf",
-                    "C:/Windows/Fonts/lucon.ttf",  # Consolas-like fallback
+
+                digital_candidates = add_bundled([
+                    "digital-7 (mono).ttf",
+                    "digital-7.ttf",
+                    "DS-DIGIB.ttf",
+                    "DS-DIGII.ttf",
+                ]) + [
+                    # System fallbacks
+                    "C:/Windows/Fonts/ds-digib.ttf",
+                    "C:/Windows/Fonts/ds-digii.ttf",
+                    "C:/Windows/Fonts/consola.ttf",
+                    "C:/Windows/Fonts/lucon.ttf",
                 ]
 
                 def first_existing(paths: list[str]) -> str | None:
