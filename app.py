@@ -896,9 +896,26 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
                     # Sizes
                     font_title = ImageFont.truetype(display_font_path, int(height * 0.14))   # Server title
                     font_round = ImageFont.truetype(display_font_path, int(height * 0.18))   # Round label
-                    font_vs = ImageFont.truetype(display_font_path, int(height * 0.12))      # VS text
+                    font_vs = ImageFont.truetype(display_font_path, int(height * 0.12))      # VS text / names (primary)
                     font_time = ImageFont.truetype(digital_font_path, int(height * 0.09))    # Date/Time
                     font_tiny = ImageFont.truetype(display_font_path, int(height * 0.07))    # Tournament name
+
+                    # Additional robust fallback font for names (in case display font lacks glyphs)
+                    try:
+                        names_fallback_path = first_existing([
+                            str(Path("Fonts") / "arialbd.ttf"),
+                            "C:/Windows/Fonts/arialbd.ttf",
+                            "C:/Windows/Fonts/arial.ttf",
+                        ])
+                        font_names_fallback = ImageFont.truetype(names_fallback_path, int(height * 0.12)) if names_fallback_path else font_vs
+                    except Exception:
+                        font_names_fallback = font_vs
+
+                    # Log selected fonts once
+                    try:
+                        print(f"Poster fonts -> display: {display_font_path}, digital: {digital_font_path}, names_fallback: {names_fallback_path if 'names_fallback_path' in locals() else 'n/a'}")
+                    except Exception:
+                        pass
                 else:
                     raise Exception("No suitable font found")
                     
@@ -978,13 +995,36 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
             round_y = int(height * 0.35)  # More space from top
             draw_text_with_outline(round_text, round_x, round_y, font_round, use_yellow=True)
             
-            # Add Captain vs Captain text (center) with more spacing
-            vs_text = f"{team1_captain} VS {team2_captain}"
-            vs_bbox = draw.textbbox((0, 0), vs_text, font=font_vs)
-            vs_width = vs_bbox[2] - vs_bbox[0]
-            vs_x = (width - vs_width) // 2
-            vs_y = int(height * 0.55)  # More space between round and captains
-            draw_text_with_outline(vs_text, vs_x, vs_y, font_vs)
+            # Add Captain vs Captain text (center) with glyph-safe fallback for names
+            import re
+            names_text = f"{team1_captain}"  # left name
+            vs_core = " VS "
+            right_name_text = f"{team2_captain}"
+
+            # If names contain non-ASCII likely unsupported by distressed font, use fallback for names
+            combined_names = names_text + right_name_text
+            use_fallback_for_names = bool(re.search(r"[^A-Za-z0-9 \-_.]", combined_names))
+
+            # Measure with components to center the whole line
+            left_font = font_names_fallback if use_fallback_for_names else font_vs
+            right_font = font_names_fallback if use_fallback_for_names else font_vs
+            vs_font = font_vs
+
+            left_box = draw.textbbox((0, 0), names_text, font=left_font)
+            vs_box = draw.textbbox((0, 0), vs_core, font=vs_font)
+            right_box = draw.textbbox((0, 0), right_name_text, font=right_font)
+            total_width = (left_box[2] - left_box[0]) + (vs_box[2] - vs_box[0]) + (right_box[2] - right_box[0])
+            current_x = (width - total_width) // 2
+            vs_y = int(height * 0.55)
+
+            # Draw left name
+            draw_text_with_outline(names_text, current_x, vs_y, left_font)
+            current_x += (left_box[2] - left_box[0])
+            # Draw VS
+            draw_text_with_outline(vs_core, current_x, vs_y, vs_font, use_yellow=False)
+            current_x += (vs_box[2] - vs_box[0])
+            # Draw right name
+            draw_text_with_outline(right_name_text, current_x, vs_y, right_font)
             
             # Add date (if provided) with more spacing
             if date_str:
@@ -1116,7 +1156,7 @@ async def on_ready():
         save_scheduled_events()
     except Exception as e:
         print(f"Startup cleanup sweep error: {e}")
-
+    
     # Sync commands with timeout handling
     try:
         print("🔄 Syncing slash commands...")
@@ -1352,7 +1392,7 @@ async def event_create(
     
     # Resolve round label from choice
     round_label = round.value if isinstance(round, app_commands.Choice) else str(round)
-
+    
     # Store event data for reminders
     scheduled_events[event_id] = {
         'title': f"Round {round_label} Match",
