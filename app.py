@@ -94,6 +94,9 @@ def save_scheduled_events():
 # Track per-event reminder tasks (for cancellation/update)
 reminder_tasks = {}
 
+# Track per-event cleanup tasks (to remove finished events after result)
+cleanup_tasks = {}
+
 # Store judge assignments to prevent overloading
 judge_assignments = {}  # {judge_id: [event_ids]}
 
@@ -709,6 +712,78 @@ async def schedule_event_reminder_v2(event_id: str, team1_captain: discord.Membe
     except Exception as e:
         print(f"Error in schedule_event_reminder_v2 for event {event_id}: {e}")
 
+async def schedule_event_cleanup(event_id: str, delay_hours: int = 36):
+    """Schedule cleanup to remove an event after delay_hours (default 36h)."""
+    try:
+        if event_id not in scheduled_events:
+            return
+        delay_seconds = delay_hours * 3600
+
+        async def cleanup_task():
+            try:
+                await asyncio.sleep(delay_seconds)
+                data = scheduled_events.get(event_id)
+                if not data:
+                    return
+                # Delete original schedule message if known
+                try:
+                    guilds = bot.guilds
+                    for guild in guilds:
+                        ch_id = data.get('schedule_channel_id')
+                        msg_id = data.get('schedule_message_id')
+                        if ch_id and msg_id:
+                            channel = guild.get_channel(ch_id)
+                            if channel:
+                                try:
+                                    msg = await channel.fetch_message(msg_id)
+                                    await msg.delete()
+                                except discord.NotFound:
+                                    pass
+                                except Exception as e:
+                                    print(f"Error deleting schedule message for {event_id}: {e}")
+                except Exception as e:
+                    print(f"Guild/channel fetch error during cleanup for {event_id}: {e}")
+
+                # Clean up poster file if any
+                try:
+                    poster_path = data.get('poster_path')
+                    if poster_path and os.path.exists(poster_path):
+                        os.remove(poster_path)
+                except Exception as e:
+                    print(f"Poster cleanup error for {event_id}: {e}")
+
+                # Remove any reminder task
+                try:
+                    if event_id in reminder_tasks:
+                        reminder_tasks[event_id].cancel()
+                        del reminder_tasks[event_id]
+                except Exception:
+                    pass
+
+                # Finally remove from scheduled events and persist
+                try:
+                    if event_id in scheduled_events:
+                        del scheduled_events[event_id]
+                        save_scheduled_events()
+                except Exception as e:
+                    print(f"Error removing event {event_id} in cleanup: {e}")
+            except asyncio.CancelledError:
+                print(f"Cleanup task for event {event_id} was cancelled")
+            except Exception as e:
+                print(f"Error in cleanup task for event {event_id}: {e}")
+
+        # Cancel existing cleanup if any and schedule new
+        if event_id in cleanup_tasks:
+            try:
+                cleanup_tasks[event_id].cancel()
+            except Exception:
+                pass
+
+        cleanup_tasks[event_id] = asyncio.create_task(cleanup_task())
+        print(f"Cleanup scheduled for event {event_id} in {delay_hours} hours")
+    except Exception as e:
+        print(f"Error scheduling cleanup for event {event_id}: {e}")
+
 def get_random_template():
     """Get a random template image from the Templates folder"""
     template_path = "Templates"
@@ -724,7 +799,7 @@ def get_random_template():
             return random.choice(image_files)
     return None
 
-def create_event_poster(template_path: str, round_num: int, team1_captain: str, team2_captain: str, utc_time: str, date_str: str = None, tournament_name: str = "King of the Seas", server_name: str = "The Devil's Spot") -> str:
+def create_event_poster(template_path: str, round_label: str, team1_captain: str, team2_captain: str, utc_time: str, date_str: str = None, tournament_name: str = "King of the Seas", server_name: str = "The Devil's Spot") -> str:
     """Create event poster with text overlays"""
     try:
         # Open the template image
@@ -753,30 +828,58 @@ def create_event_poster(template_path: str, round_num: int, team1_captain: str, 
             # Get image dimensions
             width, height = poster.size
             
-            # Try to load fonts with better visibility and readability
+            # Try to load two font families: display (distressed/stencil) and digital (seven-segment)
             try:
-                # Try multiple font options for better visibility
-                font_options = [
-                    "C:/Windows/Fonts/impact.ttf",      # Impact - very bold and visible
-                    "C:/Windows/Fonts/arialbd.ttf",     # Arial Bold
-                    "C:/Windows/Fonts/calibrib.ttf",    # Calibri Bold
-                    "C:/Windows/Fonts/verdanab.ttf",    # Verdana Bold
-                    "C:/Windows/Fonts/trebucbd.ttf",    # Trebuchet MS Bold
+                # Candidate font files on Windows
+                display_candidates = [
+                    "C:/Windows/Fonts/Capture_it.ttf",
+                    "C:/Windows/Fonts/HeadlinerNo45.ttf",
+                    "C:/Windows/Fonts/Army_Rust.ttf",
+                    "C:/Windows/Fonts/stencil.ttf",
+                    "C:/Windows/Fonts/impact.ttf",
+                    "C:/Windows/Fonts/arialbd.ttf",
                 ]
-                
-                font_path = None
-                for font_option in font_options:
-                    if os.path.exists(font_option):
-                        font_path = font_option
-                        break
-                
-                if font_path:
-                    # Use larger, more visible font sizes
-                    font_title = ImageFont.truetype(font_path, int(height * 0.14))   # Title font (even bigger)
-                    font_large = ImageFont.truetype(font_path, int(height * 0.18))   # Round number (much bigger)
-                    font_medium = ImageFont.truetype(font_path, int(height * 0.12))  # VS text (bigger)
-                    font_small = ImageFont.truetype(font_path, int(height * 0.09))   # Time and date (bigger)
-                    font_tiny = ImageFont.truetype(font_path, int(height * 0.07))    # Tournament name (bigger)
+                digital_candidates = [
+                    "C:/Windows/Fonts/digital-7 (mono).ttf",
+                    "C:/Windows/Fonts/digital-7.ttf",
+                    "C:/Windows/Fonts/DS-DIGIB.ttf",
+                    "C:/Windows/Fonts/DS-DIGII.ttf",
+                    "C:/Windows/Fonts/lucon.ttf",  # Consolas-like fallback
+                ]
+
+                def first_existing(paths: list[str]) -> str | None:
+                    for p in paths:
+                        try:
+                            if os.path.exists(p):
+                                return p
+                        except Exception:
+                            continue
+                    return None
+
+                display_font_path = first_existing(display_candidates)
+                digital_font_path = first_existing(digital_candidates)
+
+                # If still not found, fall back to generic bold and monospace
+                if not display_font_path:
+                    display_font_path = first_existing([
+                        "C:/Windows/Fonts/arialbd.ttf",
+                        "C:/Windows/Fonts/verdanab.ttf",
+                        "C:/Windows/Fonts/trebucbd.ttf",
+                    ])
+                if not digital_font_path:
+                    digital_font_path = first_existing([
+                        "C:/Windows/Fonts/consola.ttf",
+                        "C:/Windows/Fonts/lucon.ttf",
+                        "C:/Windows/Fonts/arial.ttf",
+                    ])
+
+                if display_font_path and digital_font_path:
+                    # Sizes
+                    font_title = ImageFont.truetype(display_font_path, int(height * 0.14))   # Server title
+                    font_round = ImageFont.truetype(display_font_path, int(height * 0.18))   # Round label
+                    font_vs = ImageFont.truetype(display_font_path, int(height * 0.12))      # VS text
+                    font_time = ImageFont.truetype(digital_font_path, int(height * 0.09))    # Date/Time
+                    font_tiny = ImageFont.truetype(display_font_path, int(height * 0.07))    # Tournament name
                 else:
                     raise Exception("No suitable font found")
                     
@@ -784,23 +887,23 @@ def create_event_poster(template_path: str, round_num: int, team1_captain: str, 
                 try:
                     # Fallback to regular Arial with bigger sizes
                     font_title = ImageFont.truetype("arial.ttf", int(height * 0.14))
-                    font_large = ImageFont.truetype("arial.ttf", int(height * 0.18))
-                    font_medium = ImageFont.truetype("arial.ttf", int(height * 0.12))
-                    font_small = ImageFont.truetype("arial.ttf", int(height * 0.09))
+                    font_round = ImageFont.truetype("arial.ttf", int(height * 0.18))
+                    font_vs = ImageFont.truetype("arial.ttf", int(height * 0.12))
+                    font_time = ImageFont.truetype("arial.ttf", int(height * 0.09))
                     font_tiny = ImageFont.truetype("arial.ttf", int(height * 0.07))
                 except:
                     # Final fallback to default font with larger sizes
                     try:
                         font_title = ImageFont.load_default().font_variant(size=int(height * 0.14))
-                        font_large = ImageFont.load_default().font_variant(size=int(height * 0.18))
-                        font_medium = ImageFont.load_default().font_variant(size=int(height * 0.12))
-                        font_small = ImageFont.load_default().font_variant(size=int(height * 0.09))
+                        font_round = ImageFont.load_default().font_variant(size=int(height * 0.18))
+                        font_vs = ImageFont.load_default().font_variant(size=int(height * 0.12))
+                        font_time = ImageFont.load_default().font_variant(size=int(height * 0.09))
                         font_tiny = ImageFont.load_default().font_variant(size=int(height * 0.07))
                     except:
                         font_title = ImageFont.load_default()
-                        font_large = ImageFont.load_default()
-                        font_medium = ImageFont.load_default()
-                        font_small = ImageFont.load_default()
+                        font_round = ImageFont.load_default()
+                        font_vs = ImageFont.load_default()
+                        font_time = ImageFont.load_default()
                         font_tiny = ImageFont.load_default()
             
             # Define colors for clean visibility without backgrounds
@@ -849,37 +952,37 @@ def create_event_poster(template_path: str, round_num: int, team1_captain: str, 
             draw_text_with_outline(server_text, server_x, server_y, font_title)
             
             # Add Round text (center) - use yellow for emphasis with more spacing
-            round_text = f"ROUND {round_num}"
-            round_bbox = draw.textbbox((0, 0), round_text, font=font_large)
+            round_text = f"ROUND {round_label}"
+            round_bbox = draw.textbbox((0, 0), round_text, font=font_round)
             round_width = round_bbox[2] - round_bbox[0]
             round_x = (width - round_width) // 2
             round_y = int(height * 0.35)  # More space from top
-            draw_text_with_outline(round_text, round_x, round_y, font_large, use_yellow=True)
+            draw_text_with_outline(round_text, round_x, round_y, font_round, use_yellow=True)
             
             # Add Captain vs Captain text (center) with more spacing
             vs_text = f"{team1_captain} VS {team2_captain}"
-            vs_bbox = draw.textbbox((0, 0), vs_text, font=font_medium)
+            vs_bbox = draw.textbbox((0, 0), vs_text, font=font_vs)
             vs_width = vs_bbox[2] - vs_bbox[0]
             vs_x = (width - vs_width) // 2
             vs_y = int(height * 0.55)  # More space between round and captains
-            draw_text_with_outline(vs_text, vs_x, vs_y, font_medium)
+            draw_text_with_outline(vs_text, vs_x, vs_y, font_vs)
             
             # Add date (if provided) with more spacing
             if date_str:
-                date_text = f"📅 {date_str}"
-                date_bbox = draw.textbbox((0, 0), date_text, font=font_small)
+                date_text = f"DATE:  {date_str}"
+                date_bbox = draw.textbbox((0, 0), date_text, font=font_time)
                 date_width = date_bbox[2] - date_bbox[0]
                 date_x = (width - date_width) // 2
                 date_y = int(height * 0.72)  # More space between captains and date
-                draw_emoji_text_with_outline(date_text, date_x, date_y, font_small)
+                draw_text_with_outline(date_text, date_x, date_y, font_time)
             
             # Add UTC time with more spacing
-            time_text = f"🕐 {utc_time}"
-            time_bbox = draw.textbbox((0, 0), time_text, font=font_small)
+            time_text = f"TIME:  {utc_time}"
+            time_bbox = draw.textbbox((0, 0), time_text, font=font_time)
             time_width = time_bbox[2] - time_bbox[0]
             time_x = (width - time_width) // 2
             time_y = int(height * 0.82) if date_str else int(height * 0.75)  # More space between date and time
-            draw_emoji_text_with_outline(time_text, time_x, time_y, font_small)
+            draw_text_with_outline(time_text, time_x, time_y, font_time)
             
             # "MATCH SCHEDULED" text removed as requested
             
@@ -971,6 +1074,30 @@ async def on_ready():
     # Load tournament rules from file
     load_rules()
     
+    # Reschedule cleanups for any events already marked finished_on if needed (optional)
+    try:
+        for ev_id, data in list(scheduled_events.items()):
+            # If previously scheduled cleanup exists, skip (it won't persist); we don't know result time here
+            # Optionally: clean up events older than 7 days to avoid clutter
+            try:
+                dt = data.get('datetime')
+                if isinstance(dt, datetime.datetime):
+                    age_days = (datetime.datetime.now() - dt).days
+                    if age_days >= 7:
+                        # Hard cleanup very old events
+                        if ev_id in reminder_tasks:
+                            try:
+                                reminder_tasks[ev_id].cancel()
+                                del reminder_tasks[ev_id]
+                            except Exception:
+                                pass
+                        del scheduled_events[ev_id]
+            except Exception:
+                pass
+        save_scheduled_events()
+    except Exception as e:
+        print(f"Startup cleanup sweep error: {e}")
+
     # Sync commands with timeout handling
     try:
         print("🔄 Syncing slash commands...")
@@ -1136,8 +1263,25 @@ async def event(interaction: discord.Interaction, action: app_commands.Choice[st
     minute="Minute of the event (0-59)",
     date="Date of the event",
     month="Month of the event",
-    round="Round number",
+    round="Round label",
     tournament="Tournament name (e.g. King of the Seas, Summer Cup, etc.)"
+)
+@app_commands.choices(
+    round=[
+        app_commands.Choice(name="R1", value="R1"),
+        app_commands.Choice(name="R2", value="R2"),
+        app_commands.Choice(name="R3", value="R3"),
+        app_commands.Choice(name="R4", value="R4"),
+        app_commands.Choice(name="R5", value="R5"),
+        app_commands.Choice(name="R6", value="R6"),
+        app_commands.Choice(name="R7", value="R7"),
+        app_commands.Choice(name="R8", value="R8"),
+        app_commands.Choice(name="R9", value="R9"),
+        app_commands.Choice(name="R10", value="R10"),
+        app_commands.Choice(name="Qualifier", value="Qualifier"),
+        app_commands.Choice(name="Semi Final", value="Semi Final"),
+        app_commands.Choice(name="Final", value="Final"),
+    ]
 )
 async def event_create(
     interaction: discord.Interaction,
@@ -1147,7 +1291,7 @@ async def event_create(
     minute: int,
     date: int,
     month: int,
-    round: int,
+    round: app_commands.Choice[str],
     tournament: str
 ):
     """Creates an event with the specified parameters"""
@@ -1187,13 +1331,16 @@ async def event_create(
     # Calculate time differences and format times
     time_info = calculate_time_difference(event_datetime)
     
+    # Resolve round label from choice
+    round_label = round.value if isinstance(round, app_commands.Choice) else str(round)
+
     # Store event data for reminders
     scheduled_events[event_id] = {
-        'title': f"Round {round} Match",
+        'title': f"Round {round_label} Match",
         'datetime': event_datetime,
         'time_str': time_info['utc_time'],
         'date_str': f"{date:02d}/{month:02d}",
-        'round': f"Round {round}",
+        'round': round_label,
         'minutes_left': time_info['minutes_remaining'],
         'tournament': tournament,
         'judge': None,
@@ -1214,7 +1361,7 @@ async def event_create(
             # Create poster with text overlays
             poster_image = create_event_poster(
                 template_image, 
-                round, 
+                round_label, 
                 team_1_captain.display_name, 
                 team_2_captain.display_name, 
                 time_info['utc_time_simple'],
@@ -1243,7 +1390,7 @@ async def event_create(
         value=f"**Tournament:** {tournament}\n"
               f"**UTC Time:** {time_info['utc_time']}\n"
               f"**Local Time:** <t:{timestamp}:F> (<t:{timestamp}:R>)\n"
-              f"**Round:** Round {round}\n"
+              f"**Round:** {round_label}\n"
               f"**Channel:** {interaction.channel.mention}",
         inline=False
     )
@@ -1472,6 +1619,31 @@ async def event_result(
     except Exception as e:
         print(f"⚠️ Could not post in Staff Attendance channel: {e}")
 
+    # Schedule auto-cleanup of matching events in this channel after 36 hours
+    try:
+        current_channel_id = interaction.channel.id if interaction.channel else None
+        matching_event_ids = []
+        for ev_id, data in scheduled_events.items():
+            if data.get('channel_id') == current_channel_id:
+                # Optional: further match by captains to be safer
+                try:
+                    t1 = getattr(data.get('team1_captain'), 'id', None)
+                    t2 = getattr(data.get('team2_captain'), 'id', None)
+                    if winner.id in (t1, t2) and loser.id in (t1, t2):
+                        matching_event_ids.append(ev_id)
+                except Exception:
+                    matching_event_ids.append(ev_id)
+
+        scheduled_any = False
+        for ev_id in matching_event_ids:
+            await schedule_event_cleanup(ev_id, delay_hours=36)
+            scheduled_any = True
+
+        if scheduled_any:
+            await interaction.followup.send("🧹 Auto-cleanup scheduled: Related event(s) will be removed after 36 hours.", ephemeral=True)
+    except Exception as e:
+        print(f"Error scheduling auto-cleanup after results: {e}")
+
 @tree.command(name="time", description="Get a random match time from fixed 30-min slots (12:00-17:00 UTC)")
 async def time(interaction: discord.Interaction):
     """Pick a random time from 30-minute slots between 12:00 and 17:00 UTC and show all slots."""
@@ -1596,6 +1768,87 @@ async def choose(interaction: discord.Interaction, options: str):
     
     await interaction.response.send_message(embed=embed)
 
+
+@tree.command(name="unassigned_events", description="List events without a judge assigned (Judges/Organizers)")
+async def unassigned_events(interaction: discord.Interaction):
+    """Show all scheduled events that do not currently have a judge assigned."""
+    try:
+        # Allow Head Organizer, Head Helper, Helper Team, and Judges to view
+        head_organizer_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_organizer"]) if interaction.user else None
+        head_helper_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_helper"]) if interaction.user else None
+        helper_team_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["helper_team"]) if interaction.user else None
+        judge_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["judge"]) if interaction.user else None
+
+        if not (head_organizer_role or head_helper_role or helper_team_role or judge_role):
+            await interaction.response.send_message("❌ You need Organizer or Judge role to view unassigned events.", ephemeral=True)
+            return
+
+        # Build list of unassigned events
+        unassigned = []
+        for event_id, data in scheduled_events.items():
+            if not data.get('judge'):
+                unassigned.append((event_id, data))
+
+        # If none, inform
+        if not unassigned:
+            await interaction.response.send_message("✅ All events currently have a judge assigned.", ephemeral=True)
+            return
+
+        # Sort by datetime if present
+        try:
+            unassigned.sort(key=lambda x: x[1].get('datetime') or datetime.datetime.max)
+        except Exception:
+            pass
+
+        # Create embed summary
+        embed = discord.Embed(
+            title="📝 Unassigned Events",
+            description="Events without a judge. Use the message link to take the schedule.",
+            color=discord.Color.orange(),
+            timestamp=discord.utils.utcnow()
+        )
+
+        # Add up to 25 entries (Discord practical limit for a single embed field block)
+        lines = []
+        for idx, (ev_id, data) in enumerate(unassigned[:25], start=1):
+            round_label = data.get('round', 'Round')
+            date_str = data.get('date_str', 'N/A')
+            time_str = data.get('time_str', 'N/A')
+            ch_id = data.get('schedule_channel_id') or data.get('channel_id')
+            msg_id = data.get('schedule_message_id')
+            team1 = data.get('team1_captain')
+            team2 = data.get('team2_captain')
+            team1_name = getattr(team1, 'display_name', 'Unknown') if team1 else 'Unknown'
+            team2_name = getattr(team2, 'display_name', 'Unknown') if team2 else 'Unknown'
+
+            link = None
+            try:
+                if interaction.guild and ch_id and msg_id:
+                    link = f"https://discord.com/channels/{interaction.guild.id}/{ch_id}/{msg_id}"
+            except Exception:
+                link = None
+
+            if link:
+                line = f"{idx}. {team1_name} vs {team2_name} • {round_label} • {time_str} • {date_str}\n↪ {link}"
+            else:
+                line = f"{idx}. {team1_name} vs {team2_name} • {round_label} • {time_str} • {date_str}"
+            lines.append(line)
+
+        embed.add_field(
+            name=f"Available ({len(unassigned)})",
+            value="\n\n".join(lines),
+            inline=False
+        )
+
+        embed.set_footer(text="Use the link to open the original schedule and press Take Schedule.")
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except Exception as e:
+        print(f"Error in unassigned_events: {e}")
+        try:
+            await interaction.response.send_message("❌ An error occurred while fetching unassigned events.", ephemeral=True)
+        except Exception:
+            pass
 
 @tree.command(name="event-delete", description="Delete a scheduled event (Head Organizer/Head Helper/Helper Team only)")
 async def event_delete(interaction: discord.Interaction):
