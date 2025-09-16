@@ -12,6 +12,9 @@ pytz>=2023.3
 # Image processing (lightweight)
 Pillow>=10.0.0
 
+# HTTP requests for Google Fonts API
+requests>=2.31.0
+
 # Essential only - removed heavy dependencies that might cause timeout:
 # - pandas (large dependency)
 # - numpy (large dependency) 

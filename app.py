@@ -17,6 +17,8 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import json
 from pathlib import Path
+import requests
+import tempfile
 
 # Load environment variables
 load_dotenv()
@@ -674,6 +676,98 @@ async def schedule_event_cleanup(event_id: str, delay_hours: int = 36):
     except Exception as e:
         print(f"Error scheduling cleanup for event {event_id}: {e}")
 
+# Google Fonts API Integration
+def download_google_font(font_family: str, font_style: str = "regular", font_weight: str = "400") -> str:
+    """Download a font from Google Fonts API and return the local file path"""
+    try:
+        # Google Fonts API URL
+        api_url = f"https://fonts.googleapis.com/css2?family={font_family.replace(' ', '+')}:wght@{font_weight}"
+        
+        # Add style parameter if not regular
+        if font_style != "regular":
+            api_url += f"&style={font_style}"
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(api_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        # Parse CSS to get font URL
+        css_content = response.text
+        font_urls = re.findall(r'url\((https://[^)]+\.woff2?)\)', css_content)
+        
+        if not font_urls:
+            print(f"No font URLs found in CSS for {font_family}")
+            return None
+        
+        # Download the first font file (usually woff2)
+        font_url = font_urls[0]
+        font_response = requests.get(font_url, timeout=15)
+        font_response.raise_for_status()
+        
+        # Create temporary file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.woff2')
+        temp_file.write(font_response.content)
+        temp_file.close()
+        
+        print(f"Downloaded Google Font: {font_family} -> {temp_file.name}")
+        return temp_file.name
+        
+    except Exception as e:
+        print(f"Error downloading Google Font {font_family}: {e}")
+        return None
+
+def get_font_with_fallbacks(font_name: str, size: int, font_style: str = "regular") -> ImageFont.FreeTypeFont:
+    """Get a font with multiple fallback options including Google Fonts"""
+    font_candidates = []
+    
+    # 1. Try Google Fonts first
+    try:
+        google_font_path = download_google_font(font_name, font_style)
+        if google_font_path:
+            font_candidates.append(google_font_path)
+    except Exception as e:
+        print(f"Google Fonts failed for {font_name}: {e}")
+    
+    # 2. Try local bundled fonts
+    local_fonts = [
+        str(Path("Fonts") / "capture_it" / "Capture it.ttf"),
+        str(Path("Fonts") / "ds_digital" / "DS-DIGIB.TTF"),
+        str(Path("Fonts") / "ds_digital" / "DS-DIGII.TTF"),
+        str(Path("Fonts") / "ds_digital" / "DS-DIGI.TTF"),
+    ]
+    font_candidates.extend(local_fonts)
+    
+    # 3. Try system fonts
+    system_fonts = [
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/arialbd.ttf", 
+        "C:/Windows/Fonts/impact.ttf",
+        "C:/Windows/Fonts/consola.ttf",
+        "C:/Windows/Fonts/trebucbd.ttf",
+    ]
+    font_candidates.extend(system_fonts)
+    
+    # Try each font candidate
+    for font_path in font_candidates:
+        try:
+            if os.path.exists(font_path):
+                font = ImageFont.truetype(font_path, size)
+                print(f"Successfully loaded font: {font_path}")
+                return font
+        except Exception as e:
+            print(f"Failed to load font {font_path}: {e}")
+            continue
+    
+    # Final fallback to default font
+    print(f"All fonts failed, using default font for size {size}")
+    try:
+        return ImageFont.load_default().font_variant(size=size)
+    except:
+        return ImageFont.load_default()
+
 def get_random_template():
     """Get a random template image from the Templates folder"""
     template_path = "Templates"
@@ -690,10 +784,19 @@ def get_random_template():
     return None
 
 def create_event_poster(template_path: str, round_label: str, team1_captain: str, team2_captain: str, utc_time: str, date_str: str = None, tournament_name: str = "King of the Seas", server_name: str = "The Devil's Spot") -> str:
-    """Create event poster with text overlays"""
+    """Create event poster with text overlays using Google Fonts and improved error handling"""
+    print(f"Creating poster with template: {template_path}")
+    
     try:
+        # Validate template path
+        if not os.path.exists(template_path):
+            print(f"Template file not found: {template_path}")
+            return None
+            
         # Open the template image
         with Image.open(template_path) as img:
+            print(f"Opened template image: {img.size}, mode: {img.mode}")
+            
             # Convert to RGBA if needed
             if img.mode != 'RGBA':
                 img = img.convert('RGBA')
@@ -708,140 +811,53 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
                 new_width = int(width * ratio)
                 new_height = int(height * ratio)
                 img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                print(f"Resized image to: {new_width}x{new_height}")
             
             # Create a copy to work with
             poster = img.copy()
             draw = ImageDraw.Draw(poster)
             
-            # Use regular PIL drawing (emojis will be displayed as text)
-            
-            # Get image dimensions
+            # Get final image dimensions
             width, height = poster.size
             
-            # Try to load two font families: display (distressed/stencil) and digital (seven-segment)
-            try:
-                # Helper to expand bundled font paths
-                def add_bundled(font_names: list[str]) -> list[str]:
-                    candidates = []
-                    for name in font_names:
-                        candidates.append(str(Path("Fonts") / name))
-                        candidates.append(str(Path("fonts") / name))
-                        candidates.append(name)  # allow absolute or cwd
-                    return candidates
-
-                # Prefer bundled fonts first (place .ttf files in Fonts/)
-                display_candidates = add_bundled([
-                    "Capture_it.ttf",
-                    "HeadlinerNo45.ttf",
-                    "Army_Rust.ttf",
-                    "stencil.ttf",
-                ]) + [
-                    # System fallbacks
-                    "C:/Windows/Fonts/stencil.ttf",
-                    "C:/Windows/Fonts/impact.ttf",
-                    "C:/Windows/Fonts/arialbd.ttf",
-                ]
-
-                digital_candidates = add_bundled([
-                    "digital-7 (mono).ttf",
-                    "digital-7.ttf",
-                    "DS-DIGIB.ttf",
-                    "DS-DIGII.ttf",
-                ]) + [
-                    # System fallbacks
-                    "C:/Windows/Fonts/ds-digib.ttf",
-                    "C:/Windows/Fonts/ds-digii.ttf",
-                    "C:/Windows/Fonts/consola.ttf",
-                    "C:/Windows/Fonts/lucon.ttf",
-                ]
-
-                def first_existing(paths: list[str]) -> str | None:
-                    for p in paths:
-                        try:
-                            if os.path.exists(p):
-                                return p
-                        except Exception:
-                            continue
-                    return None
-
-                display_font_path = first_existing(display_candidates)
-                digital_font_path = first_existing(digital_candidates)
-
-                # If still not found, fall back to generic bold and monospace
-                if not display_font_path:
-                    display_font_path = first_existing([
-                        "C:/Windows/Fonts/arialbd.ttf",
-                        "C:/Windows/Fonts/verdanab.ttf",
-                        "C:/Windows/Fonts/trebucbd.ttf",
-                    ])
-                if not digital_font_path:
-                    digital_font_path = first_existing([
-                        "C:/Windows/Fonts/consola.ttf",
-                        "C:/Windows/Fonts/lucon.ttf",
-                        "C:/Windows/Fonts/arial.ttf",
-                    ])
-
-                if display_font_path and digital_font_path:
-                    # Sizes
-                    font_title = ImageFont.truetype(display_font_path, int(height * 0.14))   # Server title
-                    font_round = ImageFont.truetype(display_font_path, int(height * 0.18))   # Round label
-                    font_vs = ImageFont.truetype(display_font_path, int(height * 0.12))      # VS text / names (primary)
-                    font_time = ImageFont.truetype(digital_font_path, int(height * 0.09))    # Date/Time
-                    font_tiny = ImageFont.truetype(display_font_path, int(height * 0.07))    # Tournament name
-
-                    # Additional robust fallback font for names (in case display font lacks glyphs)
-                    try:
-                        names_fallback_path = first_existing([
-                            str(Path("Fonts") / "arialbd.ttf"),
-                            "C:/Windows/Fonts/arialbd.ttf",
-                            "C:/Windows/Fonts/arial.ttf",
-                        ])
-                        font_names_fallback = ImageFont.truetype(names_fallback_path, int(height * 0.12)) if names_fallback_path else font_vs
-                    except Exception:
-                        font_names_fallback = font_vs
-
-                    # Log selected fonts once
-                    try:
-                        print(f"Poster fonts -> display: {display_font_path}, digital: {digital_font_path}, names_fallback: {names_fallback_path if 'names_fallback_path' in locals() else 'n/a'}")
-                    except Exception:
-                        pass
-                else:
-                    raise Exception("No suitable font found")
-                    
-            except:
-                try:
-                    # Fallback to regular Arial with bigger sizes
-                    font_title = ImageFont.truetype("arial.ttf", int(height * 0.14))
-                    font_round = ImageFont.truetype("arial.ttf", int(height * 0.18))
-                    font_vs = ImageFont.truetype("arial.ttf", int(height * 0.12))
-                    font_time = ImageFont.truetype("arial.ttf", int(height * 0.09))
-                    font_tiny = ImageFont.truetype("arial.ttf", int(height * 0.07))
-                except:
-                    # Final fallback to default font with larger sizes
-                    try:
-                        font_title = ImageFont.load_default().font_variant(size=int(height * 0.14))
-                        font_round = ImageFont.load_default().font_variant(size=int(height * 0.18))
-                        font_vs = ImageFont.load_default().font_variant(size=int(height * 0.12))
-                        font_time = ImageFont.load_default().font_variant(size=int(height * 0.09))
-                        font_tiny = ImageFont.load_default().font_variant(size=int(height * 0.07))
-                    except:
-                        font_title = ImageFont.load_default()
-                        font_round = ImageFont.load_default()
-                        font_vs = ImageFont.load_default()
-                        font_time = ImageFont.load_default()
-                        font_tiny = ImageFont.load_default()
+            # Load fonts using the new system with Google Fonts integration
+            print("Loading fonts...")
             
-            # Define colors for clean visibility without backgrounds
+            # Define font sizes based on image height
+            title_size = int(height * 0.14)
+            round_size = int(height * 0.18)
+            vs_size = int(height * 0.12)
+            time_size = int(height * 0.09)
+            tiny_size = int(height * 0.07)
+            
+            # Load fonts with Google Fonts fallback
+            try:
+                # Try Google Fonts first, then fallback to local/system fonts
+                font_title = get_font_with_fallbacks("Orbitron", title_size, "bold")  # Modern display font
+                font_round = get_font_with_fallbacks("Orbitron", round_size, "bold")  # Same for round
+                font_vs = get_font_with_fallbacks("Roboto", vs_size, "bold")          # Clean sans-serif for names
+                font_time = get_font_with_fallbacks("Share Tech Mono", time_size)     # Monospace for time
+                font_tiny = get_font_with_fallbacks("Roboto", tiny_size)              # Small text
+                
+                print("Fonts loaded successfully")
+                
+            except Exception as font_error:
+                print(f"Font loading error: {font_error}")
+                # Ultimate fallback to default fonts
+                font_title = ImageFont.load_default()
+                font_round = ImageFont.load_default()
+                font_vs = ImageFont.load_default()
+                font_time = ImageFont.load_default()
+                font_tiny = ImageFont.load_default()
+            
+            # Define colors for clean visibility
             text_color = (255, 255, 255)  # Bright white
             outline_color = (0, 0, 0)     # Pure black
             yellow_color = (255, 255, 0)  # Bright yellow for important text
             
-            # Simple helper function with outline only (no background)
+            # Helper function to draw text with outline
             def draw_text_with_outline(text, x, y, font, text_color=text_color, use_yellow=False):
-                # Convert coordinates to integers
                 x, y = int(x), int(y)
-                
-                # Choose text color
                 final_text_color = yellow_color if use_yellow else text_color
                 
                 # Draw thick black outline for visibility
@@ -849,98 +865,106 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
                 for dx in range(-outline_width, outline_width + 1):
                     for dy in range(-outline_width, outline_width + 1):
                         if dx != 0 or dy != 0:
-                            draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
+                            try:
+                                draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
+                            except Exception as e:
+                                print(f"Error drawing outline: {e}")
                 
                 # Draw main text on top
-                draw.text((x, y), text, font=font, fill=final_text_color)
+                try:
+                    draw.text((x, y), text, font=font, fill=final_text_color)
+                except Exception as e:
+                    print(f"Error drawing main text: {e}")
             
-            def draw_emoji_text_with_outline(text, x, y, font, text_color=text_color):
-                # Convert coordinates to integers
-                x, y = int(x), int(y)
+            # Add server name text (top center)
+            try:
+                server_text = server_name
+                server_bbox = draw.textbbox((0, 0), server_text, font=font_title)
+                server_width = server_bbox[2] - server_bbox[0]
+                server_x = (width - server_width) // 2
+                server_y = int(height * 0.08)
+                draw_text_with_outline(server_text, server_x, server_y, font_title)
+                print(f"Added server name: {server_text}")
+            except Exception as e:
+                print(f"Error adding server name: {e}")
+            
+            # Add Round text (center) - use yellow for emphasis
+            try:
+                round_text = f"ROUND {round_label}"
+                round_bbox = draw.textbbox((0, 0), round_text, font=font_round)
+                round_width = round_bbox[2] - round_bbox[0]
+                round_x = (width - round_width) // 2
+                round_y = int(height * 0.35)
+                draw_text_with_outline(round_text, round_x, round_y, font_round, use_yellow=True)
+                print(f"Added round text: {round_text}")
+            except Exception as e:
+                print(f"Error adding round text: {e}")
+            
+            # Add Captain vs Captain text (center)
+            try:
+                names_text = f"{team1_captain}"
+                vs_core = " VS "
+                right_name_text = f"{team2_captain}"
+
+                # Measure text components to center the whole line
+                left_box = draw.textbbox((0, 0), names_text, font=font_vs)
+                vs_box = draw.textbbox((0, 0), vs_core, font=font_vs)
+                right_box = draw.textbbox((0, 0), right_name_text, font=font_vs)
                 
-                # Draw thick black outline
-                outline_width = 3
-                for dx in range(-outline_width, outline_width + 1):
-                    for dy in range(-outline_width, outline_width + 1):
-                        if dx != 0 or dy != 0:
-                            draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
+                total_width = (left_box[2] - left_box[0]) + (vs_box[2] - vs_box[0]) + (right_box[2] - right_box[0])
+                current_x = (width - total_width) // 2
+                vs_y = int(height * 0.55)
+
+                # Draw left name
+                draw_text_with_outline(names_text, current_x, vs_y, font_vs)
+                current_x += (left_box[2] - left_box[0])
                 
-                # Draw main text on top
-                draw.text((x, y), text, font=font, fill=text_color)
+                # Draw VS
+                draw_text_with_outline(vs_core, current_x, vs_y, font_vs, use_yellow=False)
+                current_x += (vs_box[2] - vs_box[0])
+                
+                # Draw right name
+                draw_text_with_outline(right_name_text, current_x, vs_y, font_vs)
+                
+                print(f"Added VS text: {names_text} VS {right_name_text}")
+            except Exception as e:
+                print(f"Error adding VS text: {e}")
             
-            # Add server name text (top center, bold)
-            server_text = server_name
-            server_bbox = draw.textbbox((0, 0), server_text, font=font_title)
-            server_width = server_bbox[2] - server_bbox[0]
-            server_x = (width - server_width) // 2
-            server_y = int(height * 0.08)  # Moved down slightly
-            draw_text_with_outline(server_text, server_x, server_y, font_title)
-            
-            # Add Round text (center) - use yellow for emphasis with more spacing
-            round_text = f"ROUND {round_label}"
-            round_bbox = draw.textbbox((0, 0), round_text, font=font_round)
-            round_width = round_bbox[2] - round_bbox[0]
-            round_x = (width - round_width) // 2
-            round_y = int(height * 0.35)  # More space from top
-            draw_text_with_outline(round_text, round_x, round_y, font_round, use_yellow=True)
-            
-            # Add Captain vs Captain text (center) with glyph-safe fallback for names
-            import re
-            names_text = f"{team1_captain}"  # left name
-            vs_core = " VS "
-            right_name_text = f"{team2_captain}"
-
-            # If names contain non-ASCII likely unsupported by distressed font, use fallback for names
-            combined_names = names_text + right_name_text
-            use_fallback_for_names = bool(re.search(r"[^A-Za-z0-9 \-_.]", combined_names))
-
-            # Measure with components to center the whole line
-            left_font = font_names_fallback if use_fallback_for_names else font_vs
-            right_font = font_names_fallback if use_fallback_for_names else font_vs
-            vs_font = font_vs
-
-            left_box = draw.textbbox((0, 0), names_text, font=left_font)
-            vs_box = draw.textbbox((0, 0), vs_core, font=vs_font)
-            right_box = draw.textbbox((0, 0), right_name_text, font=right_font)
-            total_width = (left_box[2] - left_box[0]) + (vs_box[2] - vs_box[0]) + (right_box[2] - right_box[0])
-            current_x = (width - total_width) // 2
-            vs_y = int(height * 0.55)
-
-            # Draw left name
-            draw_text_with_outline(names_text, current_x, vs_y, left_font)
-            current_x += (left_box[2] - left_box[0])
-            # Draw VS
-            draw_text_with_outline(vs_core, current_x, vs_y, vs_font, use_yellow=False)
-            current_x += (vs_box[2] - vs_box[0])
-            # Draw right name
-            draw_text_with_outline(right_name_text, current_x, vs_y, right_font)
-            
-            # Add date (if provided) with more spacing
+            # Add date (if provided)
             if date_str:
-                date_text = f"DATE:  {date_str}"
-                date_bbox = draw.textbbox((0, 0), date_text, font=font_time)
-                date_width = date_bbox[2] - date_bbox[0]
-                date_x = (width - date_width) // 2
-                date_y = int(height * 0.72)  # More space between captains and date
-                draw_text_with_outline(date_text, date_x, date_y, font_time)
+                try:
+                    date_text = f"DATE:  {date_str}"
+                    date_bbox = draw.textbbox((0, 0), date_text, font=font_time)
+                    date_width = date_bbox[2] - date_bbox[0]
+                    date_x = (width - date_width) // 2
+                    date_y = int(height * 0.72)
+                    draw_text_with_outline(date_text, date_x, date_y, font_time)
+                    print(f"Added date: {date_text}")
+                except Exception as e:
+                    print(f"Error adding date: {e}")
             
-            # Add UTC time with more spacing
-            time_text = f"TIME:  {utc_time}"
-            time_bbox = draw.textbbox((0, 0), time_text, font=font_time)
-            time_width = time_bbox[2] - time_bbox[0]
-            time_x = (width - time_width) // 2
-            time_y = int(height * 0.82) if date_str else int(height * 0.75)  # More space between date and time
-            draw_text_with_outline(time_text, time_x, time_y, font_time)
+            # Add UTC time
+            try:
+                time_text = f"TIME:  {utc_time}"
+                time_bbox = draw.textbbox((0, 0), time_text, font=font_time)
+                time_width = time_bbox[2] - time_bbox[0]
+                time_x = (width - time_width) // 2
+                time_y = int(height * 0.82) if date_str else int(height * 0.75)
+                draw_text_with_outline(time_text, time_x, time_y, font_time)
+                print(f"Added time: {time_text}")
+            except Exception as e:
+                print(f"Error adding time: {e}")
             
-            # "MATCH SCHEDULED" text removed as requested
-            
-            # Save the modified image (no overlay compositing needed)
+            # Save the modified image
             output_path = f"temp_poster_{int(datetime.datetime.now().timestamp())}.png"
             poster.save(output_path, "PNG")
+            print(f"Poster saved successfully: {output_path}")
             return output_path
             
     except Exception as e:
-        print(f"Error creating poster: {e}")
+        print(f"Critical error creating poster: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def calculate_time_difference(event_datetime: datetime.datetime, user_timezone: str = None) -> dict:
@@ -1095,7 +1119,8 @@ async def help_command(interaction: discord.Interaction):
         value=(
             "`/team_balance` - Balance teams by player levels\n"
             "`/time` - Generate random match time (12:00-17:59 UTC)\n"
-            "`/choose` - Random choice from comma-separated options"
+            "`/choose` - Random choice from comma-separated options\n"
+            "`/test-poster` - Test poster creation with sample data"
         ),
         inline=False
     )
@@ -1628,6 +1653,56 @@ async def time(interaction: discord.Interaction):
     embed.set_footer(text="Match Time Generator • 😈The Devil's Spot😈")
     
     await interaction.response.send_message(embed=embed)
+
+@tree.command(name="test-poster", description="Test poster creation with sample data (Head Organizer/Head Helper/Helper Team only)")
+async def test_poster(interaction: discord.Interaction):
+    """Test poster creation to diagnose issues"""
+    
+    # Check permissions
+    if not has_event_create_permission(interaction):
+        await interaction.response.send_message("❌ You need **Head Organizer**, **Head Helper** or **Helper Team** role to test poster creation.", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        # Get a random template
+        template_image = get_random_template()
+        
+        if not template_image:
+            await interaction.followup.send("❌ No template images found in Templates folder. Please add some image files to the Templates directory.", ephemeral=True)
+            return
+        
+        # Test poster creation with sample data
+        test_poster_path = create_event_poster(
+            template_image,
+            "TEST",
+            "TestCaptain1",
+            "TestCaptain2", 
+            "15:30 UTC",
+            "25/12/2024",
+            "Test Tournament"
+        )
+        
+        if test_poster_path:
+            # Send the test poster
+            with open(test_poster_path, 'rb') as f:
+                file = discord.File(f, filename="test_poster.png")
+                await interaction.followup.send("✅ Test poster created successfully! Here's the result:", file=file, ephemeral=True)
+            
+            # Clean up the test file
+            try:
+                os.remove(test_poster_path)
+            except:
+                pass
+        else:
+            await interaction.followup.send("❌ Failed to create test poster. Check the console logs for detailed error information.", ephemeral=True)
+            
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error during poster test: {str(e)}", ephemeral=True)
+        print(f"Poster test error: {e}")
+        import traceback
+        traceback.print_exc()
 
 @tree.command(name="choose", description="Randomly choose from a list of options or maps")
 @app_commands.describe(
