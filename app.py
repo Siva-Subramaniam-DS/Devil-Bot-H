@@ -843,12 +843,12 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
             # Load fonts using the new system with Google Fonts integration
             print("Loading fonts...")
             
-            # Define font sizes based on image height
-            title_size = int(height * 0.14)
-            round_size = int(height * 0.18)
-            vs_size = int(height * 0.12)
-            time_size = int(height * 0.09)
-            tiny_size = int(height * 0.07)
+            # Define font sizes based on image height (reduced for better fit)
+            title_size = int(height * 0.10)
+            round_size = int(height * 0.14)
+            vs_size = int(height * 0.09)
+            time_size = int(height * 0.07)
+            tiny_size = int(height * 0.05)
             
             # Load fonts with Google Fonts fallback
             try:
@@ -1355,8 +1355,8 @@ async def event_create(
             poster_image = create_event_poster(
                 template_image, 
                 round_label, 
-                team_1_captain.display_name, 
-                team_2_captain.display_name, 
+                team_1_captain.name, 
+                team_2_captain.name, 
                 time_info['utc_time_simple'],
                 f"{date:02d}/{month:02d}/{current_year}",
                 tournament
