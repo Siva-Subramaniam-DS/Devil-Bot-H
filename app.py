@@ -768,6 +768,26 @@ def get_font_with_fallbacks(font_name: str, size: int, font_style: str = "regula
     except:
         return ImageFont.load_default()
 
+def sanitize_username_for_poster(username: str) -> str:
+    """Convert Discord display names to poster-friendly ASCII by stripping emojis and fancy Unicode.
+
+    - Normalizes to NFKD and drops non-ASCII codepoints
+    - Collapses repeated whitespace and trims ends
+    - Falls back to 'Player' if empty after sanitization
+    """
+    try:
+        import unicodedata
+        # Normalize and strip accents/fancy letters
+        normalized = unicodedata.normalize('NFKD', str(username))
+        ascii_only = normalized.encode('ascii', 'ignore').decode('ascii')
+        # Remove remaining characters that might be control or non-printable
+        ascii_only = re.sub(r"[^\x20-\x7E]", "", ascii_only)
+        # Collapse whitespace
+        ascii_only = re.sub(r"\s+", " ", ascii_only).strip()
+        return ascii_only if ascii_only else "Player"
+    except Exception:
+        return str(username) if username else "Player"
+
 def get_random_template():
     """Get a random template image from the Templates folder"""
     template_path = "Templates"
@@ -835,7 +855,8 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
                 # Try Google Fonts first, then fallback to local/system fonts
                 font_title = get_font_with_fallbacks("Orbitron", title_size, "bold")  # Modern display font
                 font_round = get_font_with_fallbacks("Orbitron", round_size, "bold")  # Same for round
-                font_vs = get_font_with_fallbacks("Roboto", vs_size, "bold")          # Clean sans-serif for names
+                # Use a unique bundled font for player names so styling is consistent regardless of Discord nickname styling
+                font_vs = get_font_with_fallbacks("Capture it", vs_size, "bold")       # Unique display font from Fonts/capture_it
                 font_time = get_font_with_fallbacks("Share Tech Mono", time_size)     # Monospace for time
                 font_tiny = get_font_with_fallbacks("Roboto", tiny_size)              # Small text
                 
@@ -902,12 +923,12 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
             
             # Add Captain vs Captain text (center)
             try:
-                names_text = f"{team1_captain}"
+                left_name_text = sanitize_username_for_poster(team1_captain)
                 vs_core = " VS "
-                right_name_text = f"{team2_captain}"
+                right_name_text = sanitize_username_for_poster(team2_captain)
 
                 # Measure text components to center the whole line
-                left_box = draw.textbbox((0, 0), names_text, font=font_vs)
+                left_box = draw.textbbox((0, 0), left_name_text, font=font_vs)
                 vs_box = draw.textbbox((0, 0), vs_core, font=font_vs)
                 right_box = draw.textbbox((0, 0), right_name_text, font=font_vs)
                 
@@ -916,7 +937,7 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
                 vs_y = int(height * 0.55)
 
                 # Draw left name
-                draw_text_with_outline(names_text, current_x, vs_y, font_vs)
+                draw_text_with_outline(left_name_text, current_x, vs_y, font_vs)
                 current_x += (left_box[2] - left_box[0])
                 
                 # Draw VS
@@ -926,7 +947,7 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
                 # Draw right name
                 draw_text_with_outline(right_name_text, current_x, vs_y, font_vs)
                 
-                print(f"Added VS text: {names_text} VS {right_name_text}")
+                print(f"Added VS text: {left_name_text} VS {right_name_text}")
             except Exception as e:
                 print(f"Error adding VS text: {e}")
             
@@ -1119,8 +1140,7 @@ async def help_command(interaction: discord.Interaction):
         value=(
             "`/team_balance` - Balance teams by player levels\n"
             "`/time` - Generate random match time (12:00-17:59 UTC)\n"
-            "`/choose` - Random choice from comma-separated options\n"
-            "`/test-poster` - Test poster creation with sample data"
+            "`/choose` - Random choice from comma-separated options"
         ),
         inline=False
     )
@@ -1654,55 +1674,7 @@ async def time(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-@tree.command(name="test-poster", description="Test poster creation with sample data (Head Organizer/Head Helper/Helper Team only)")
-async def test_poster(interaction: discord.Interaction):
-    """Test poster creation to diagnose issues"""
-    
-    # Check permissions
-    if not has_event_create_permission(interaction):
-        await interaction.response.send_message("❌ You need **Head Organizer**, **Head Helper** or **Helper Team** role to test poster creation.", ephemeral=True)
-        return
-    
-    await interaction.response.defer(ephemeral=True)
-    
-    try:
-        # Get a random template
-        template_image = get_random_template()
-        
-        if not template_image:
-            await interaction.followup.send("❌ No template images found in Templates folder. Please add some image files to the Templates directory.", ephemeral=True)
-            return
-        
-        # Test poster creation with sample data
-        test_poster_path = create_event_poster(
-            template_image,
-            "TEST",
-            "TestCaptain1",
-            "TestCaptain2", 
-            "15:30 UTC",
-            "25/12/2024",
-            "Test Tournament"
-        )
-        
-        if test_poster_path:
-            # Send the test poster
-            with open(test_poster_path, 'rb') as f:
-                file = discord.File(f, filename="test_poster.png")
-                await interaction.followup.send("✅ Test poster created successfully! Here's the result:", file=file, ephemeral=True)
-            
-            # Clean up the test file
-            try:
-                os.remove(test_poster_path)
-            except:
-                pass
-        else:
-            await interaction.followup.send("❌ Failed to create test poster. Check the console logs for detailed error information.", ephemeral=True)
-            
-    except Exception as e:
-        await interaction.followup.send(f"❌ Error during poster test: {str(e)}", ephemeral=True)
-        print(f"Poster test error: {e}")
-        import traceback
-        traceback.print_exc()
+## Removed test-poster command per request
 
 @tree.command(name="choose", description="Randomly choose from a list of options or maps")
 @app_commands.describe(
