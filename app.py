@@ -31,6 +31,13 @@ CHANNEL_IDS = {
     "transcript": 1175720148259324017
 }
 
+# Bot Owner ID for special permissions
+BOT_OWNER_ID = 1251442077561131059
+
+# Branding constants
+ORGANIZATION_NAME = "😈The Devil's Spot😈"
+TOURNAMENT_SYSTEM_NAME = "😈The Devil's Spot😈 Tournament System"
+
 # Role IDs for permissions
 ROLE_IDS = {
     "judge": 1175620798912925917,
@@ -159,6 +166,262 @@ def set_rules_content(content, user_id, username):
     }
     
     return save_rules()
+
+# Command data structure for help system
+COMMAND_DATA = {
+    "system": {
+        "title": "⚙️ System Commands",
+        "description": "Basic bot functionality available to all users",
+        "commands": [
+            {
+                "name": "/help",
+                "description": "Display this comprehensive command guide with role-based filtering",
+                "usage": "/help",
+                "permissions": "everyone",
+                "example": "Simply type `/help` to see available commands"
+            },
+            {
+                "name": "/rules",
+                "description": "View tournament rules (or manage them if you're an organizer)",
+                "usage": "/rules",
+                "permissions": "everyone (view) / organizer (manage)",
+                "example": "Use `/rules` to view current tournament rules"
+            }
+        ]
+    },
+    "utility": {
+        "title": "🛠️ Utility Commands",
+        "description": "Helpful tools for tournament management",
+        "commands": [
+            {
+                "name": "/team_balance",
+                "description": "Balance two teams based on player skill levels",
+                "usage": "/team_balance levels:<comma-separated levels>",
+                "permissions": "everyone",
+                "example": "Example: `/team_balance levels:48,50,51,35,51,50,50,37,51,52`"
+            },
+            {
+                "name": "/time",
+                "description": "Generate a random match time between 12:00-17:59 UTC",
+                "usage": "/time",
+                "permissions": "everyone",
+                "example": "Use `/time` to get a random tournament match time"
+            },
+            {
+                "name": "/choose",
+                "description": "Make a random choice from comma-separated options",
+                "usage": "/choose options:<option1,option2,option3>",
+                "permissions": "everyone",
+                "example": "Example: `/choose options:Map1,Map2,Map3` to randomly select a map"
+            }
+        ]
+    },
+    "event_management": {
+        "title": "🏆 Event Management",
+        "description": "Tournament event creation and management (requires special permissions)",
+        "commands": [
+            {
+                "name": "/event-create",
+                "description": "Create new tournament events with Group support and automatic scheduling",
+                "usage": "/event-create team_1_captain:<@user> team_2_captain:<@user> hour:<0-23> minute:<0-59> date:<1-31> month:<1-12> round:<round> tournament:<name> [group:<A-J>] [winner:<@user>] [loser:<@user>]",
+                "permissions": "head_organizer / head_helper / helper_team",
+                "example": "Example: `/event-create team_1_captain:@Captain1 team_2_captain:@Captain2 hour:15 minute:30 date:25 month:12 round:R1 tournament:Summer Cup group:Group A`",
+                "round_options": "R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, Qualifier, Semi Final, Final",
+                "group_options": "Group A, Group B, Group C, Group D, Group E, Group F, Group G, Group H, Group I, Group J"
+            },
+            {
+                "name": "/event-edit",
+                "description": "Edit existing events to correct mistakes with Group support and Winner/Loser options",
+                "usage": "/event-edit",
+                "permissions": "head_organizer / head_helper / helper_team",
+                "example": "Use `/event-edit` to select and modify any scheduled event with pre-filled current values including group and winner/loser assignments"
+            },
+            {
+                "name": "/event-result",
+                "description": "Record match results with Group support and comprehensive tournament tracking",
+                "usage": "/event-result winner:<@user> winner_score:<score> loser:<@user> loser_score:<score> tournament:<name> round:<round> [group:<A-J>] [remarks:<text>] [screenshots:<1-11>]",
+                "permissions": "head_organizer / judge",
+                "example": "Use `/event-result` to record match outcomes with group information and screenshot evidence",
+                "round_options": "R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, Qualifier, Semi Final, Final",
+                "group_options": "Group A, Group B, Group C, Group D, Group E, Group F, Group G, Group H, Group I, Group J"
+            },
+            {
+                "name": "/event-delete",
+                "description": "Delete scheduled events (use with caution)",
+                "usage": "/event-delete",
+                "permissions": "head_organizer / head_helper / helper_team",
+                "example": "Use `/event-delete` and select from scheduled events to remove"
+            },
+            {
+                "name": "/unassigned_events",
+                "description": "List all events without a judge assigned for easy management",
+                "usage": "/unassigned_events",
+                "permissions": "head_organizer / head_helper / helper_team / judge",
+                "example": "Use `/unassigned_events` to see which matches still need judges"
+            },
+            {
+                "name": "/exchange_judge",
+                "description": "Exchange an old judge for a new judge for events in current channel",
+                "usage": "/exchange_judge old_judge:<@user> new_judge:<@user>",
+                "permissions": "head_organizer / head_helper / helper_team",
+                "example": "Use `/exchange_judge` to reassign judges for events in the current channel"
+            }
+        ]
+    },
+    "judge": {
+        "title": "👨‍⚖️ Judge Commands",
+        "description": "Special commands for tournament judges",
+        "commands": [
+            {
+                "name": "Take Schedule Button",
+                "description": "Click the 'Take Schedule' button on event posts to assign yourself as judge",
+                "usage": "Click button on event announcements",
+                "permissions": "judge / head_organizer",
+                "example": "Look for green 'Take Schedule' buttons in the schedule channel"
+            },
+            {
+                "name": "/event-result",
+                "description": "Record official match results with Group support and comprehensive tracking",
+                "usage": "/event-result winner:<@user> winner_score:<score> loser:<@user> loser_score:<score> tournament:<name> round:<round> [group:<A-J>] [remarks:<text>] [screenshots:<1-11>]",
+                "permissions": "judge / head_organizer",
+                "example": "Use after completing a match you judged to record the official result with group information and evidence",
+                "round_options": "R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, Qualifier, Semi Final, Final",
+                "group_options": "Group A, Group B, Group C, Group D, Group E, Group F, Group G, Group H, Group I, Group J"
+            },
+            {
+                "name": "/unassigned_events",
+                "description": "View events without assigned judges to help with scheduling",
+                "usage": "/unassigned_events",
+                "permissions": "judge / head_organizer",
+                "example": "Use `/unassigned_events` to see which matches need judges"
+            }
+        ]
+    }
+}
+
+def get_user_permission_level(user_roles) -> str:
+    """Determine user's permission level based on their Discord roles"""
+    try:
+        role_ids = [role.id for role in user_roles]
+        
+        # Check for bot owner
+        if BOT_OWNER_ID in role_ids:
+            return "owner"
+        elif ROLE_IDS["head_organizer"] in role_ids:
+            return "organizer"
+        elif ROLE_IDS["head_helper"] in role_ids or ROLE_IDS["helper_team"] in role_ids:
+            return "helper"
+        elif ROLE_IDS["judge"] in role_ids:
+            return "judge"
+        else:
+            return "user"
+    except Exception as e:
+        print(f"Error determining user permission level: {e}")
+        return "user"  # Default to basic user permissions
+
+def filter_commands_by_permission(permission_level: str) -> dict:
+    """Filter command data based on user's permission level"""
+    try:
+        filtered_data = {}
+        
+        # Always include system and utility commands for everyone
+        filtered_data["system"] = COMMAND_DATA["system"]
+        filtered_data["utility"] = COMMAND_DATA["utility"]
+        
+        # Add role-specific commands based on permission level
+        if permission_level in ["owner", "organizer", "helper"]:
+            # Owners, organizers and helpers get all commands
+            filtered_data["event_management"] = COMMAND_DATA["event_management"]
+            filtered_data["judge"] = COMMAND_DATA["judge"]
+        elif permission_level == "judge":
+            # Judges get judge commands and can see some event management
+            filtered_data["judge"] = COMMAND_DATA["judge"]
+            # Show limited event management (only event-result)
+            judge_event_commands = {
+                "title": "🏆 Event Management (Judge Access)",
+                "description": "Event commands available to judges",
+                "commands": [cmd for cmd in COMMAND_DATA["event_management"]["commands"] 
+                           if cmd["name"] == "/event-result"]
+            }
+            if judge_event_commands["commands"]:
+                filtered_data["event_management"] = judge_event_commands
+        
+        return filtered_data
+    except Exception as e:
+        print(f"Error filtering commands by permission: {e}")
+        # Return basic commands as fallback
+        return {
+            "system": COMMAND_DATA["system"],
+            "utility": COMMAND_DATA["utility"]
+        }
+
+def build_help_embed(permission_level: str, user_name: str) -> discord.Embed:
+    """Build a comprehensive help embed based on user's permission level"""
+    try:
+        # Get filtered commands for this user
+        filtered_commands = filter_commands_by_permission(permission_level)
+        
+        # Create main embed
+        embed = discord.Embed(
+            title=f"🎯 {ORGANIZATION_NAME} Tournament System",
+            description=f"**Command Guide** - Showing commands available to you\n*Permission Level: {permission_level.title()}*",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # Add command categories
+        for category_key, category_data in filtered_commands.items():
+            commands_text = ""
+            
+            for cmd in category_data["commands"]:
+                # Format command entry
+                commands_text += f"**{cmd['name']}**\n"
+                commands_text += f"└ {cmd['description']}\n"
+                commands_text += f"└ *Permissions: {cmd['permissions']}*\n"
+                if cmd.get('round_options'):
+                    commands_text += f"└ 🎯 **Round Options:** {cmd['round_options']}\n"
+                if cmd.get('example'):
+                    commands_text += f"└ 💡 {cmd['example']}\n"
+                commands_text += "\n"
+            
+            # Add field to embed (Discord has a 1024 character limit per field)
+            if len(commands_text) > 1024:
+                # Split long content into multiple fields
+                parts = []
+                current_part = ""
+                for line in commands_text.split('\n'):
+                    if len(current_part + line + '\n') > 1024:
+                        parts.append(current_part.strip())
+                        current_part = line + '\n'
+                    else:
+                        current_part += line + '\n'
+                if current_part.strip():
+                    parts.append(current_part.strip())
+                
+                for i, part in enumerate(parts):
+                    field_name = category_data["title"] if i == 0 else f"{category_data['title']} (cont.)"
+                    embed.add_field(name=field_name, value=part, inline=False)
+            else:
+                embed.add_field(
+                    name=category_data["title"],
+                    value=commands_text,
+                    inline=False
+                )
+        
+        embed.set_footer(text=f"{ORGANIZATION_NAME} • Command Guide")
+        return embed
+        
+    except Exception as e:
+        print(f"Error building help embed: {e}")
+        # Fallback embed
+        embed = discord.Embed(
+            title="🎯 Command Guide",
+            description="Error loading command information. Please try again.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.set_footer(text=f"{ORGANIZATION_NAME}")
+        return embed
 
 def has_organizer_permission(interaction):
     """Check if user has organizer permissions for rule management"""
@@ -1105,49 +1368,30 @@ async def on_ready():
     
     print("🎯 Bot is ready to receive commands!")
 
-@tree.command(name="help", description="Show all available Event Management slash commands")
+@tree.command(name="help", description="Show available commands based on your permissions")
 async def help_command(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="🎯 Event Management Bot - Command Guide",
-        description="Complete list of available slash commands for event management.",
-        color=discord.Color.blue()
-    )
-
-    # System Commands
-    embed.add_field(
-        name="⚙️ **System Commands**",
-        value=(
-            "`/help` - Display this command guide\n"
-            "`/rules` - Manage or view tournament rules"
-        ),
-        inline=False
-    )
-
-    # Event Management
-    embed.add_field(
-        name="🏆 **Event Management**",
-        value=(
-            "`/event-create` - Create tournament events (Head Organizer/Head Helper/Helper Team)\n"
-            "`/event-result` - Record event results (Head Organizer/Judge)\n"
-            "`/event-delete` - Delete scheduled events (Head Organizer/Head Helper/Helper Team)"
-        ),
-        inline=False
-    )
-
-    # Utility Commands
-    embed.add_field(
-        name="⚖️ **Utility Commands**",
-        value=(
-            "`/team_balance` - Balance teams by player levels\n"
-            "`/time` - Generate random match time (12:00-17:59 UTC)\n"
-            "`/choose` - Random choice from comma-separated options"
-        ),
-        inline=False
-    )
-
-    embed.set_footer(text="🎯 Event Management System • Powered by Discord.py")
-    
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    """Enhanced help command with role-based filtering and detailed information"""
+    try:
+        # Determine user's permission level
+        permission_level = get_user_permission_level(interaction.user.roles)
+        
+        # Build appropriate help embed
+        embed = build_help_embed(permission_level, interaction.user.display_name)
+        
+        # Send ephemeral response
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+    except Exception as e:
+        print(f"Error in help command: {e}")
+        # Fallback response
+        embed = discord.Embed(
+            title="🎯 Command Guide",
+            description="Error loading command information. Please try again.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.set_footer(text=f"{ORGANIZATION_NAME}")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @tree.command(name="rules", description="Manage or view tournament rules")
 async def rules_command(interaction: discord.Interaction):
@@ -1257,7 +1501,10 @@ async def event(interaction: discord.Interaction, action: app_commands.Choice[st
     date="Date of the event",
     month="Month of the event",
     round="Round label",
-    tournament="Tournament name (e.g. King of the Seas, Summer Cup, etc.)"
+    tournament="Tournament name (e.g. King of the Seas, Summer Cup, etc.)",
+    group="Group assignment (A-J)",
+    winner="Winner of the match (optional)",
+    loser="Loser of the match (optional)"
 )
 @app_commands.choices(
     round=[
@@ -1274,6 +1521,18 @@ async def event(interaction: discord.Interaction, action: app_commands.Choice[st
         app_commands.Choice(name="Qualifier", value="Qualifier"),
         app_commands.Choice(name="Semi Final", value="Semi Final"),
         app_commands.Choice(name="Final", value="Final"),
+    ],
+    group=[
+        app_commands.Choice(name="Group A", value="Group A"),
+        app_commands.Choice(name="Group B", value="Group B"),
+        app_commands.Choice(name="Group C", value="Group C"),
+        app_commands.Choice(name="Group D", value="Group D"),
+        app_commands.Choice(name="Group E", value="Group E"),
+        app_commands.Choice(name="Group F", value="Group F"),
+        app_commands.Choice(name="Group G", value="Group G"),
+        app_commands.Choice(name="Group H", value="Group H"),
+        app_commands.Choice(name="Group I", value="Group I"),
+        app_commands.Choice(name="Group J", value="Group J"),
     ]
 )
 async def event_create(
@@ -1285,7 +1544,10 @@ async def event_create(
     date: int,
     month: int,
     round: app_commands.Choice[str],
-    tournament: str
+    tournament: str,
+    group: app_commands.Choice[str] = None,
+    winner: discord.Member = None,
+    loser: discord.Member = None
 ):
     """Creates an event with the specified parameters"""
     
@@ -1336,6 +1598,9 @@ async def event_create(
         'round': round_label,
         'minutes_left': time_info['minutes_remaining'],
         'tournament': tournament,
+        'group': group.value if group else None,
+        'winner': winner,
+        'loser': loser,
         'judge': None,
         'channel_id': interaction.channel.id,
         'team1_captain': team_1_captain,
@@ -1495,6 +1760,7 @@ async def event_result(
     loser_score: int,
     tournament: str,
     round: str,
+    group: app_commands.Choice[str] = None,
     remarks: str = "ggwp",
     ss_1: discord.Attachment = None,
     ss_2: discord.Attachment = None,
@@ -1524,11 +1790,15 @@ async def event_result(
         return
             
     # Create results embed matching the exact template format
+    description = f"🗓️ {winner.display_name} Vs {loser.display_name}\n"
+    description += f"**Tournament:** {tournament}\n"
+    description += f"**Round:** {round}"
+    if group:
+        description += f"\n**Group:** {group.value}"
+    
     embed = discord.Embed(
         title="Results",
-        description=f"🗓️ {winner.display_name} Vs {loser.display_name}\n"
-                   f"**Tournament:** {tournament}\n"
-                   f"**Round:** {round}",
+        description=description,
         color=discord.Color.gold(),
         timestamp=discord.utils.utcnow()
     )
@@ -1604,7 +1874,10 @@ async def event_result(
         if staff_attendance_channel:
             # Create staff attendance message
             attendance_text = f"🏅 {winner.display_name} Vs {loser.display_name}\n"
-            attendance_text += f"**Round :** {round}\n\n"
+            attendance_text += f"**Round :** {round}\n"
+            if group:
+                attendance_text += f"**Group :** {group.value}\n"
+            attendance_text += "\n"
             attendance_text += f"**Results**\n"
             attendance_text += f"🏆 {winner.display_name} ({winner_score}) Vs ({loser_score}) {loser.display_name} 💀\n\n"
             attendance_text += f"**Staffs**\n"
@@ -2089,6 +2362,291 @@ async def exchange_judge(
         updated_count += 1
 
     await interaction.response.send_message(f"✅ Judge exchanged for {updated_count} event(s) in {interaction.channel.mention}.", ephemeral=True)
+
+
+@tree.command(name="event-edit", description="Edit an existing event (Head Organizer/Head Helper/Helper Team only)")
+async def event_edit(interaction: discord.Interaction):
+    """Edit an existing event to correct mistakes"""
+    
+    # Check permissions - Bot Owner, Head Organizer, Head Helper or Helper Team can edit events
+    if interaction.user.id != BOT_OWNER_ID:
+        if not has_event_create_permission(interaction):
+            await interaction.response.send_message("❌ You need **Bot Owner**, **Head Organizer**, **Head Helper** or **Helper Team** role to edit events.", ephemeral=True)
+            return
+    
+    try:
+        # Check if there are any scheduled events
+        if not scheduled_events:
+            await interaction.response.send_message(f"❌ No scheduled events found to edit.\n\n**Debug Info:**\n• Scheduled events count: {len(scheduled_events)}\n• Events in memory: {list(scheduled_events.keys()) if scheduled_events else 'None'}", ephemeral=True)
+            return
+        
+        # Create dropdown with event names
+        class EventEditView(View):
+            def __init__(self):
+                super().__init__(timeout=60)
+                
+            @discord.ui.select(
+                placeholder="Select an event to edit...",
+                options=[
+                    discord.SelectOption(
+                        label=f"{event_data.get('team1_captain').display_name if event_data.get('team1_captain') else 'Unknown'} VS {event_data.get('team2_captain').display_name if event_data.get('team2_captain') else 'Unknown'}",
+                        description=f"{event_data.get('round', 'Unknown Round')} - {event_data.get('date_str', 'No date')} at {event_data.get('time_str', 'No time')}",
+                        value=event_id
+                    )
+                    for event_id, event_data in list(scheduled_events.items())[:25]  # Discord limit of 25 options
+                ]
+            )
+            async def select_event(self, select_interaction: discord.Interaction, select: discord.ui.Select):
+                if select_interaction.user != interaction.user:
+                    await select_interaction.response.send_message("❌ You can only edit events you selected.", ephemeral=True)
+                    return
+                
+                selected_event_id = select.values[0]
+                selected_event = scheduled_events.get(selected_event_id)
+                
+                if not selected_event:
+                    await select_interaction.response.send_message("❌ Selected event not found.", ephemeral=True)
+                    return
+                
+                # Create edit modal
+                class EventEditModal(discord.ui.Modal, title="Edit Event"):
+                    def __init__(self, event_data):
+                        super().__init__()
+                        self.event_data = event_data
+                        
+                        # Pre-fill current values
+                        self.team1_captain_input = discord.ui.TextInput(
+                            label="Team 1 Captain (User ID)",
+                            placeholder="Enter Discord User ID",
+                            default=str(getattr(event_data.get('team1_captain'), 'id', '')),
+                            required=True,
+                            max_length=20
+                        )
+                        
+                        self.team2_captain_input = discord.ui.TextInput(
+                            label="Team 2 Captain (User ID)",
+                            placeholder="Enter Discord User ID", 
+                            default=str(getattr(event_data.get('team2_captain'), 'id', '')),
+                            required=True,
+                            max_length=20
+                        )
+                        
+                        self.hour_input = discord.ui.TextInput(
+                            label="Hour (0-23)",
+                            placeholder="Enter hour",
+                            default=str(event_data.get('datetime').hour if event_data.get('datetime') else ''),
+                            required=True,
+                            max_length=2
+                        )
+                        
+                        self.minute_input = discord.ui.TextInput(
+                            label="Minute (0-59)",
+                            placeholder="Enter minute",
+                            default=str(event_data.get('datetime').minute if event_data.get('datetime') else ''),
+                            required=True,
+                            max_length=2
+                        )
+                        
+                        self.date_input = discord.ui.TextInput(
+                            label="Date (1-31)",
+                            placeholder="Enter date",
+                            default=str(event_data.get('datetime').day if event_data.get('datetime') else ''),
+                            required=True,
+                            max_length=2
+                        )
+                        
+                        self.month_input = discord.ui.TextInput(
+                            label="Month (1-12)",
+                            placeholder="Enter month",
+                            default=str(event_data.get('datetime').month if event_data.get('datetime') else ''),
+                            required=True,
+                            max_length=2
+                        )
+                        
+                        self.round_input = discord.ui.TextInput(
+                            label="Round",
+                            placeholder="Enter round (e.g., R1, R2, Final)",
+                            default=event_data.get('round', ''),
+                            required=True,
+                            max_length=50
+                        )
+                        
+                        self.tournament_input = discord.ui.TextInput(
+                            label="Tournament",
+                            placeholder="Enter tournament name",
+                            default=event_data.get('tournament', ''),
+                            required=True,
+                            max_length=100
+                        )
+                        
+                        self.group_input = discord.ui.TextInput(
+                            label="Group (Optional)",
+                            placeholder="Enter group (e.g., Group A, Group B)",
+                            default=event_data.get('group', ''),
+                            required=False,
+                            max_length=20
+                        )
+                        
+                        self.winner_input = discord.ui.TextInput(
+                            label="Winner (User ID - Optional)",
+                            placeholder="Enter Discord User ID",
+                            default=str(getattr(event_data.get('winner'), 'id', '')),
+                            required=False,
+                            max_length=20
+                        )
+                        
+                        self.loser_input = discord.ui.TextInput(
+                            label="Loser (User ID - Optional)",
+                            placeholder="Enter Discord User ID",
+                            default=str(getattr(event_data.get('loser'), 'id', '')),
+                            required=False,
+                            max_length=20
+                        )
+                        
+                        # Add all inputs
+                        self.add_item(self.team1_captain_input)
+                        self.add_item(self.team2_captain_input)
+                        self.add_item(self.hour_input)
+                        self.add_item(self.minute_input)
+                        self.add_item(self.date_input)
+                        self.add_item(self.month_input)
+                        self.add_item(self.round_input)
+                        self.add_item(self.tournament_input)
+                        self.add_item(self.group_input)
+                        self.add_item(self.winner_input)
+                        self.add_item(self.loser_input)
+                    
+                    async def on_submit(self, modal_interaction: discord.Interaction):
+                        await modal_interaction.response.defer(ephemeral=True)
+                        
+                        try:
+                            # Parse and validate inputs
+                            team1_id = int(self.team1_captain_input.value.strip())
+                            team2_id = int(self.team2_captain_input.value.strip())
+                            hour = int(self.hour_input.value.strip())
+                            minute = int(self.minute_input.value.strip())
+                            date = int(self.date_input.value.strip())
+                            month = int(self.month_input.value.strip())
+                            round_label = self.round_input.value.strip()
+                            tournament = self.tournament_input.value.strip()
+                            group_label = self.group_input.value.strip() if self.group_input.value.strip() else None
+                            
+                            # Parse winner/loser IDs (optional)
+                            winner_id = None
+                            loser_id = None
+                            if self.winner_input.value.strip():
+                                winner_id = int(self.winner_input.value.strip())
+                            if self.loser_input.value.strip():
+                                loser_id = int(self.loser_input.value.strip())
+                            
+                            # Validate inputs
+                            if not (0 <= hour <= 23):
+                                await modal_interaction.followup.send("❌ Hour must be between 0 and 23", ephemeral=True)
+                                return
+                            
+                            if not (0 <= minute <= 59):
+                                await modal_interaction.followup.send("❌ Minute must be between 0 and 59", ephemeral=True)
+                                return
+                                
+                            if not (1 <= date <= 31):
+                                await modal_interaction.followup.send("❌ Date must be between 1 and 31", ephemeral=True)
+                                return
+                                
+                            if not (1 <= month <= 12):
+                                await modal_interaction.followup.send("❌ Month must be between 1 and 12", ephemeral=True)
+                                return
+                            
+                            # Get team captains
+                            team1_captain = interaction.guild.get_member(team1_id)
+                            team2_captain = interaction.guild.get_member(team2_id)
+                            
+                            if not team1_captain:
+                                await modal_interaction.followup.send(f"❌ Team 1 captain with ID {team1_id} not found in this server.", ephemeral=True)
+                                return
+                                
+                            if not team2_captain:
+                                await modal_interaction.followup.send(f"❌ Team 2 captain with ID {team2_id} not found in this server.", ephemeral=True)
+                                return
+                            
+                            # Get winner/loser members (optional)
+                            winner = None
+                            loser = None
+                            if winner_id:
+                                winner = interaction.guild.get_member(winner_id)
+                                if not winner:
+                                    await modal_interaction.followup.send(f"❌ Winner with ID {winner_id} not found in this server.", ephemeral=True)
+                                    return
+                            
+                            if loser_id:
+                                loser = interaction.guild.get_member(loser_id)
+                                if not loser:
+                                    await modal_interaction.followup.send(f"❌ Loser with ID {loser_id} not found in this server.", ephemeral=True)
+                                    return
+                            
+                            # Create new datetime
+                            current_year = datetime.datetime.now().year
+                            new_datetime = datetime.datetime(current_year, month, date, hour, minute)
+                            
+                            # Calculate time differences
+                            time_info = calculate_time_difference(new_datetime)
+                            
+                            # Update event data
+                            selected_event['datetime'] = new_datetime
+                            selected_event['time_str'] = time_info['utc_time']
+                            selected_event['date_str'] = f"{date:02d}/{month:02d}"
+                            selected_event['round'] = round_label
+                            selected_event['group'] = group_label
+                            selected_event['tournament'] = tournament
+                            selected_event['team1_captain'] = team1_captain
+                            selected_event['team2_captain'] = team2_captain
+                            selected_event['winner'] = winner
+                            selected_event['loser'] = loser
+                            selected_event['minutes_left'] = time_info['minutes_remaining']
+                            
+                            # Save updated events
+                            save_scheduled_events()
+                            
+                            # Build success message with group information
+                            success_message = f"✅ Event updated successfully!\n\n**Updated Event:**\n• {team1_captain.display_name} VS {team2_captain.display_name}\n• {round_label} - {tournament}\n• {time_info['utc_time']} ({date:02d}/{month:02d})"
+                            if group_label:
+                                success_message += f"\n• Group: {group_label}"
+                            if winner:
+                                success_message += f"\n• Winner: {winner.display_name}"
+                            if loser:
+                                success_message += f"\n• Loser: {loser.display_name}"
+                            
+                            await modal_interaction.followup.send(success_message, ephemeral=True)
+                            
+                        except ValueError as e:
+                            await modal_interaction.followup.send(f"❌ Invalid input format. Please check your values.\nError: {str(e)}", ephemeral=True)
+                        except Exception as e:
+                            await modal_interaction.followup.send(f"❌ Error updating event: {str(e)}", ephemeral=True)
+                
+                # Show edit modal
+                edit_modal = EventEditModal(selected_event)
+                await select_interaction.response.send_modal(edit_modal)
+        
+        # Create embed for event selection
+        embed = discord.Embed(
+            title="📝 Edit Event",
+            description="Select an event to edit from the dropdown below.",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        embed.add_field(
+            name="📋 Available Events",
+            value=f"Found {len(scheduled_events)} scheduled event(s)",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Event Management • {ORGANIZATION_NAME}")
+        
+        view = EventEditView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
 
 
 # Ticket Management Commands - Removed as requested
