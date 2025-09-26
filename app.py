@@ -1502,9 +1502,7 @@ async def event(interaction: discord.Interaction, action: app_commands.Choice[st
     month="Month of the event",
     round="Round label",
     tournament="Tournament name (e.g. King of the Seas, Summer Cup, etc.)",
-    group="Group assignment (A-J)",
-    winner="Winner of the match (optional)",
-    loser="Loser of the match (optional)"
+    group="Group assignment (A-J) or Winner/Loser"
 )
 @app_commands.choices(
     round=[
@@ -1533,6 +1531,8 @@ async def event(interaction: discord.Interaction, action: app_commands.Choice[st
         app_commands.Choice(name="Group H", value="Group H"),
         app_commands.Choice(name="Group I", value="Group I"),
         app_commands.Choice(name="Group J", value="Group J"),
+        app_commands.Choice(name="Winner", value="Winner"),
+        app_commands.Choice(name="Loser", value="Loser"),
     ]
 )
 async def event_create(
@@ -1545,9 +1545,7 @@ async def event_create(
     month: int,
     round: app_commands.Choice[str],
     tournament: str,
-    group: app_commands.Choice[str] = None,
-    winner: discord.Member = None,
-    loser: discord.Member = None
+    group: app_commands.Choice[str] = None
 ):
     """Creates an event with the specified parameters"""
     
@@ -1599,8 +1597,6 @@ async def event_create(
         'minutes_left': time_info['minutes_remaining'],
         'tournament': tournament,
         'group': group.value if group else None,
-        'winner': winner,
-        'loser': loser,
         'judge': None,
         'channel_id': interaction.channel.id,
         'team1_captain': team_1_captain,
@@ -1739,6 +1735,7 @@ async def event_create(
     loser_score="Loser's score",
     tournament="Tournament name (e.g., The Zumwalt S2)",
     round="Round name (e.g., Semi-Final, Final, Quarter-Final)",
+    group="Group assignment (A-J) - optional",
     remarks="Remarks about the match (e.g., ggwp, close match)",
     ss_1="Screenshot 1 (upload)",
     ss_2="Screenshot 2 (upload)",
@@ -1751,6 +1748,22 @@ async def event_create(
     ss_9="Screenshot 9 (upload)",
     ss_10="Screenshot 10 (upload)",
     ss_11="Screenshot 11 (upload)"
+)
+@app_commands.choices(
+    group=[
+        app_commands.Choice(name="Group A", value="Group A"),
+        app_commands.Choice(name="Group B", value="Group B"),
+        app_commands.Choice(name="Group C", value="Group C"),
+        app_commands.Choice(name="Group D", value="Group D"),
+        app_commands.Choice(name="Group E", value="Group E"),
+        app_commands.Choice(name="Group F", value="Group F"),
+        app_commands.Choice(name="Group G", value="Group G"),
+        app_commands.Choice(name="Group H", value="Group H"),
+        app_commands.Choice(name="Group I", value="Group I"),
+        app_commands.Choice(name="Group J", value="Group J"),
+        app_commands.Choice(name="Winner", value="Winner"),
+        app_commands.Choice(name="Loser", value="Loser"),
+    ]
 )
 async def event_result(
     interaction: discord.Interaction,
@@ -2481,24 +2494,8 @@ async def event_edit(interaction: discord.Interaction):
                         
                         self.group_input = discord.ui.TextInput(
                             label="Group (Optional)",
-                            placeholder="Enter group (e.g., Group A, Group B)",
+                            placeholder="Enter group (e.g., Group A, Group B, Winner, Loser)",
                             default=event_data.get('group', ''),
-                            required=False,
-                            max_length=20
-                        )
-                        
-                        self.winner_input = discord.ui.TextInput(
-                            label="Winner (User ID - Optional)",
-                            placeholder="Enter Discord User ID",
-                            default=str(getattr(event_data.get('winner'), 'id', '')),
-                            required=False,
-                            max_length=20
-                        )
-                        
-                        self.loser_input = discord.ui.TextInput(
-                            label="Loser (User ID - Optional)",
-                            placeholder="Enter Discord User ID",
-                            default=str(getattr(event_data.get('loser'), 'id', '')),
                             required=False,
                             max_length=20
                         )
@@ -2513,8 +2510,6 @@ async def event_edit(interaction: discord.Interaction):
                         self.add_item(self.round_input)
                         self.add_item(self.tournament_input)
                         self.add_item(self.group_input)
-                        self.add_item(self.winner_input)
-                        self.add_item(self.loser_input)
                     
                     async def on_submit(self, modal_interaction: discord.Interaction):
                         await modal_interaction.response.defer(ephemeral=True)
@@ -2530,14 +2525,6 @@ async def event_edit(interaction: discord.Interaction):
                             round_label = self.round_input.value.strip()
                             tournament = self.tournament_input.value.strip()
                             group_label = self.group_input.value.strip() if self.group_input.value.strip() else None
-                            
-                            # Parse winner/loser IDs (optional)
-                            winner_id = None
-                            loser_id = None
-                            if self.winner_input.value.strip():
-                                winner_id = int(self.winner_input.value.strip())
-                            if self.loser_input.value.strip():
-                                loser_id = int(self.loser_input.value.strip())
                             
                             # Validate inputs
                             if not (0 <= hour <= 23):
@@ -2568,21 +2555,6 @@ async def event_edit(interaction: discord.Interaction):
                                 await modal_interaction.followup.send(f"❌ Team 2 captain with ID {team2_id} not found in this server.", ephemeral=True)
                                 return
                             
-                            # Get winner/loser members (optional)
-                            winner = None
-                            loser = None
-                            if winner_id:
-                                winner = interaction.guild.get_member(winner_id)
-                                if not winner:
-                                    await modal_interaction.followup.send(f"❌ Winner with ID {winner_id} not found in this server.", ephemeral=True)
-                                    return
-                            
-                            if loser_id:
-                                loser = interaction.guild.get_member(loser_id)
-                                if not loser:
-                                    await modal_interaction.followup.send(f"❌ Loser with ID {loser_id} not found in this server.", ephemeral=True)
-                                    return
-                            
                             # Create new datetime
                             current_year = datetime.datetime.now().year
                             new_datetime = datetime.datetime(current_year, month, date, hour, minute)
@@ -2599,8 +2571,6 @@ async def event_edit(interaction: discord.Interaction):
                             selected_event['tournament'] = tournament
                             selected_event['team1_captain'] = team1_captain
                             selected_event['team2_captain'] = team2_captain
-                            selected_event['winner'] = winner
-                            selected_event['loser'] = loser
                             selected_event['minutes_left'] = time_info['minutes_remaining']
                             
                             # Save updated events
@@ -2610,10 +2580,6 @@ async def event_edit(interaction: discord.Interaction):
                             success_message = f"✅ Event updated successfully!\n\n**Updated Event:**\n• {team1_captain.display_name} VS {team2_captain.display_name}\n• {round_label} - {tournament}\n• {time_info['utc_time']} ({date:02d}/{month:02d})"
                             if group_label:
                                 success_message += f"\n• Group: {group_label}"
-                            if winner:
-                                success_message += f"\n• Winner: {winner.display_name}"
-                            if loser:
-                                success_message += f"\n• Loser: {loser.display_name}"
                             
                             await modal_interaction.followup.send(success_message, ephemeral=True)
                             
