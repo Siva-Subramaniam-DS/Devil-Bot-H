@@ -222,28 +222,28 @@ COMMAND_DATA = {
         "commands": [
             {
                 "name": "/event-create",
-                "description": "Create new tournament events with Group support and automatic scheduling",
-                "usage": "/event-create team_1_captain:<@user> team_2_captain:<@user> hour:<0-23> minute:<0-59> date:<1-31> month:<1-12> round:<round> tournament:<name> [group:<A-J>] [winner:<@user>] [loser:<@user>]",
+                "description": "Create new tournament events with Group support and Winner/Loser options",
+                "usage": "/event-create team_1_captain:<@user> team_2_captain:<@user> hour:<0-23> minute:<0-59> date:<1-31> month:<1-12> round:<round> tournament:<name> [group:<A-J/Winner/Loser>]",
                 "permissions": "head_organizer / head_helper / helper_team",
                 "example": "Example: `/event-create team_1_captain:@Captain1 team_2_captain:@Captain2 hour:15 minute:30 date:25 month:12 round:R1 tournament:Summer Cup group:Group A`",
                 "round_options": "R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, Qualifier, Semi Final, Final",
-                "group_options": "Group A, Group B, Group C, Group D, Group E, Group F, Group G, Group H, Group I, Group J"
+                "group_options": "Group A, Group B, Group C, Group D, Group E, Group F, Group G, Group H, Group I, Group J, Winner, Loser"
             },
             {
                 "name": "/event-edit",
                 "description": "Edit existing events to correct mistakes with Group support and Winner/Loser options",
                 "usage": "/event-edit",
                 "permissions": "head_organizer / head_helper / helper_team",
-                "example": "Use `/event-edit` to select and modify any scheduled event with pre-filled current values including group and winner/loser assignments"
+                "example": "Use `/event-edit` to select and modify any scheduled event with pre-filled current values including group assignments (Group A-J, Winner, Loser)"
             },
             {
                 "name": "/event-result",
                 "description": "Record match results with Group support and comprehensive tournament tracking",
-                "usage": "/event-result winner:<@user> winner_score:<score> loser:<@user> loser_score:<score> tournament:<name> round:<round> [group:<A-J>] [remarks:<text>] [screenshots:<1-11>]",
+                "usage": "/event-result winner:<@user> winner_score:<score> loser:<@user> loser_score:<score> tournament:<name> round:<round> [group:<A-J/Winner/Loser>] [remarks:<text>] [screenshots:<1-11>]",
                 "permissions": "head_organizer / judge",
                 "example": "Use `/event-result` to record match outcomes with group information and screenshot evidence",
                 "round_options": "R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, Qualifier, Semi Final, Final",
-                "group_options": "Group A, Group B, Group C, Group D, Group E, Group F, Group G, Group H, Group I, Group J"
+                "group_options": "Group A, Group B, Group C, Group D, Group E, Group F, Group G, Group H, Group I, Group J, Winner, Loser"
             },
             {
                 "name": "/event-delete",
