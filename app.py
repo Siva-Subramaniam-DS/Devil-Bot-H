@@ -1380,9 +1380,6 @@ async def on_message(message):
             # Update channel name
             await channel.edit(name=new_name)
             
-            # Send confirmation message
-            await message.channel.send(f"✅ Ticket prefix updated to: {new_name}")
-            
         except discord.Forbidden:
             await message.channel.send("❌ I don't have permission to edit this channel's name.")
         except discord.HTTPException as e:
