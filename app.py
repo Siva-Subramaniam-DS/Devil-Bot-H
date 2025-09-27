@@ -1649,10 +1649,10 @@ async def event_create(
               f"**UTC Time:** {time_info['utc_time']}\n"
               f"**Local Time:** <t:{timestamp}:F> (<t:{timestamp}:R>)\n"
               f"**Round:** {round_label}\n"
+              f"**Group:** {group.value}\n"
               f"**Channel:** {interaction.channel.mention}",
         inline=False
     )
-    
     # Add spacing
     embed.add_field(name="\u200b", value="\u200b", inline=False)
     
@@ -1661,14 +1661,6 @@ async def event_create(
     captains_text += f"▪ Team1 Captain: {team_1_captain.mention}\n"
     captains_text += f"▪ Team2 Captain: {team_2_captain.mention}"
     embed.add_field(name="👑 Team Captains", value=captains_text, inline=False)
-    
-    # Add spacing
-    embed.add_field(name="\u200b", value="\u200b", inline=False)
-    
-    # Staff Section
-    staff_text = f"**Staffs**\n"
-    staff_text += f"▪ Judge: *To be assigned*"
-    embed.add_field(name="👨‍⚖️ Staff", value=staff_text, inline=False)
     
     # Add spacing
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -1806,8 +1798,7 @@ async def event_result(
     description = f"🗓️ {winner.display_name} Vs {loser.display_name}\n"
     description += f"**Tournament:** {tournament}\n"
     description += f"**Round:** {round}"
-    if group:
-        description += f"\n**Group:** {group.value}"
+    description += f"\n**Group:** {group.value}"
     
     embed = discord.Embed(
         title="Results",
@@ -1822,15 +1813,25 @@ async def event_result(
     captains_text += f"▪ Team2 Captain: {loser.mention} `@{loser.name}`"
     embed.add_field(name="", value=captains_text, inline=False)
     
+    
+    # Add spacing
+    embed.add_field(name="\u200b", value="\u200b", inline=False) 
+    
     # Results Section
     results_text = f"**Results**\n"
     results_text += f"🏆 {winner.display_name} ({winner_score}) Vs ({loser_score}) {loser.display_name} 💀"
     embed.add_field(name="", value=results_text, inline=False)
     
+    # Add spacing
+    embed.add_field(name="\u200b", value="\u200b", inline=False)
+    
     # Staff Section
     staff_text = f"👨‍⚖️ **Staffs**\n"
     staff_text += f"▪ Judge: {interaction.user.mention} `@{interaction.user.name}`"
     embed.add_field(name="", value=staff_text, inline=False)
+    
+    # Add spacing
+    embed.add_field(name="\u200b", value="\u200b", inline=False)
     
     # Remarks Section
     embed.add_field(name="📝 Remarks", value=remarks, inline=False)
@@ -2423,9 +2424,10 @@ async def event_edit(interaction: discord.Interaction):
                 
                 # Create edit modal
                 class EventEditModal(discord.ui.Modal, title="Edit Event"):
-                    def __init__(self, event_data):
+                    def __init__(self, event_data, guild):
                         super().__init__()
                         self.event_data = event_data
+                        self.guild = guild
                         
                         # Pre-fill current values
                         self.team1_captain_input = discord.ui.TextInput(
@@ -2544,8 +2546,8 @@ async def event_edit(interaction: discord.Interaction):
                                 return
                             
                             # Get team captains
-                            team1_captain = interaction.guild.get_member(team1_id)
-                            team2_captain = interaction.guild.get_member(team2_id)
+                            team1_captain = self.guild.get_member(team1_id)
+                            team2_captain = self.guild.get_member(team2_id)
                             
                             if not team1_captain:
                                 await modal_interaction.followup.send(f"❌ Team 1 captain with ID {team1_id} not found in this server.", ephemeral=True)
@@ -2589,7 +2591,7 @@ async def event_edit(interaction: discord.Interaction):
                             await modal_interaction.followup.send(f"❌ Error updating event: {str(e)}", ephemeral=True)
                 
                 # Show edit modal
-                edit_modal = EventEditModal(selected_event)
+                edit_modal = EventEditModal(selected_event, interaction.guild)
                 await select_interaction.response.send_modal(edit_modal)
         
         # Create embed for event selection
@@ -2615,7 +2617,86 @@ async def event_edit(interaction: discord.Interaction):
         await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
 
 
-# Ticket Management Commands - Removed as requested
+# Ticket Status Commands
+@bot.command(name="sh")
+async def ticket_sh(ctx):
+    """Set ticket status to green (🟢) - Short"""
+    if not ctx.channel.name.startswith("ticket-"):
+        await ctx.send("❌ This command can only be used in ticket channels.", delete_after=5)
+        return
+    
+    try:
+        # Get current channel name without status indicators
+        current_name = ctx.channel.name
+        # Remove existing status indicators
+        clean_name = current_name.replace("🟢", "").replace("🔴", "").replace("🟡", "").replace("✅", "").strip()
+        
+        # Add green status
+        new_name = f"🟢 {clean_name}"
+        await ctx.channel.edit(name=new_name)
+        await ctx.send("✅ Ticket status set to **Short** 🟢", delete_after=3)
+    except Exception as e:
+        await ctx.send(f"❌ Error updating channel name: {str(e)}", delete_after=5)
+
+@bot.command(name="dd")
+async def ticket_dd(ctx):
+    """Set ticket status to red (🔴) - Dead"""
+    if not ctx.channel.name.startswith("ticket-"):
+        await ctx.send("❌ This command can only be used in ticket channels.", delete_after=5)
+        return
+    
+    try:
+        # Get current channel name without status indicators
+        current_name = ctx.channel.name
+        # Remove existing status indicators
+        clean_name = current_name.replace("🟢", "").replace("🔴", "").replace("🟡", "").replace("✅", "").strip()
+        
+        # Add red status
+        new_name = f"🔴 {clean_name}"
+        await ctx.channel.edit(name=new_name)
+        await ctx.send("✅ Ticket status set to **Dead** 🔴", delete_after=3)
+    except Exception as e:
+        await ctx.send(f"❌ Error updating channel name: {str(e)}", delete_after=5)
+
+@bot.command(name="wt")
+async def ticket_wt(ctx):
+    """Set ticket status to yellow (🟡) - Wait"""
+    if not ctx.channel.name.startswith("ticket-"):
+        await ctx.send("❌ This command can only be used in ticket channels.", delete_after=5)
+        return
+    
+    try:
+        # Get current channel name without status indicators
+        current_name = ctx.channel.name
+        # Remove existing status indicators
+        clean_name = current_name.replace("🟢", "").replace("🔴", "").replace("🟡", "").replace("✅", "").strip()
+        
+        # Add yellow status
+        new_name = f"🟡 {clean_name}"
+        await ctx.channel.edit(name=new_name)
+        await ctx.send("✅ Ticket status set to **Wait** 🟡", delete_after=3)
+    except Exception as e:
+        await ctx.send(f"❌ Error updating channel name: {str(e)}", delete_after=5)
+
+@bot.command(name="ov")
+async def ticket_ov(ctx):
+    """Set ticket status to checkbox (✅) - Over"""
+    if not ctx.channel.name.startswith("ticket-"):
+        await ctx.send("❌ This command can only be used in ticket channels.", delete_after=5)
+        return
+    
+    try:
+        # Get current channel name without status indicators
+        current_name = ctx.channel.name
+        # Remove existing status indicators
+        clean_name = current_name.replace("🟢", "").replace("🔴", "").replace("🟡", "").replace("✅", "").strip()
+        
+        # Add checkbox status
+        new_name = f"✅ {clean_name}"
+        await ctx.channel.edit(name=new_name)
+        await ctx.send("✅ Ticket status set to **Over** ✅", delete_after=3)
+    except Exception as e:
+        await ctx.send(f"❌ Error updating channel name: {str(e)}", delete_after=5)
 
 
 if __name__ == "__main__":
