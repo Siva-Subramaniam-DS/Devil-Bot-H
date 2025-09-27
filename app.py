@@ -2378,252 +2378,144 @@ async def exchange_judge(
     await interaction.response.send_message(f"✅ Judge exchanged for {updated_count} event(s) in {interaction.channel.mention}.", ephemeral=True)
 
 
-@tree.command(name="event-edit", description="Edit an existing event (Head Organizer/Head Helper/Helper Team only)")
-async def event_edit(interaction: discord.Interaction):
-    """Edit an existing event to correct mistakes"""
+@tree.command(name="event-edit", description="Edit the event in this ticket channel (Head Organizer/Head Helper/Helper Team only)")
+@app_commands.describe(
+    team_1_captain="Captain of team 1",
+    team_2_captain="Captain of team 2", 
+    hour="Hour of the event (0-23)",
+    minute="Minute of the event (0-59)",
+    date="Date of the event",
+    month="Month of the event",
+    round="Round label",
+    tournament="Tournament name (e.g. King of the Seas, Summer Cup, etc.)",
+    group="Group assignment (A-J) or Winner/Loser"
+)
+@app_commands.choices(
+    round=[
+        app_commands.Choice(name="R1", value="R1"),
+        app_commands.Choice(name="R2", value="R2"),
+        app_commands.Choice(name="R3", value="R3"),
+        app_commands.Choice(name="R4", value="R4"),
+        app_commands.Choice(name="R5", value="R5"),
+        app_commands.Choice(name="R6", value="R6"),
+        app_commands.Choice(name="R7", value="R7"),
+        app_commands.Choice(name="R8", value="R8"),
+        app_commands.Choice(name="R9", value="R9"),
+        app_commands.Choice(name="R10", value="R10"),
+        app_commands.Choice(name="Qualifier", value="Qualifier"),
+        app_commands.Choice(name="Semi Final", value="Semi Final"),
+        app_commands.Choice(name="Final", value="Final"),
+    ],
+    group=[
+        app_commands.Choice(name="Group A", value="Group A"),
+        app_commands.Choice(name="Group B", value="Group B"),
+        app_commands.Choice(name="Group C", value="Group C"),
+        app_commands.Choice(name="Group D", value="Group D"),
+        app_commands.Choice(name="Group E", value="Group E"),
+        app_commands.Choice(name="Group F", value="Group F"),
+        app_commands.Choice(name="Group G", value="Group G"),
+        app_commands.Choice(name="Group H", value="Group H"),
+        app_commands.Choice(name="Group I", value="Group I"),
+        app_commands.Choice(name="Group J", value="Group J"),
+        app_commands.Choice(name="Winner", value="Winner"),
+        app_commands.Choice(name="Loser", value="Loser"),
+    ]
+)
+async def event_edit(
+    interaction: discord.Interaction,
+    team_1_captain: discord.Member,
+    team_2_captain: discord.Member,
+    hour: int,
+    minute: int,
+    date: int,
+    month: int,
+    round: app_commands.Choice[str],
+    tournament: str,
+    group: app_commands.Choice[str] = None
+):
+    """Edit the event in this ticket channel"""
+    
+    # Defer the response to give us more time for processing
+    await interaction.response.defer(ephemeral=True)
     
     # Check permissions - Bot Owner, Head Organizer, Head Helper or Helper Team can edit events
     if interaction.user.id != BOT_OWNER_ID:
         if not has_event_create_permission(interaction):
-            await interaction.response.send_message("❌ You need **Bot Owner**, **Head Organizer**, **Head Helper** or **Helper Team** role to edit events.", ephemeral=True)
+            await interaction.followup.send("❌ You need **Bot Owner**, **Head Organizer**, **Head Helper** or **Helper Team** role to edit events.", ephemeral=True)
             return
     
+    # Find event in current channel
+    current_channel_id = interaction.channel.id
+    event_to_edit = None
+    event_id = None
+    
+    for ev_id, event_data in scheduled_events.items():
+        if event_data.get('channel_id') == current_channel_id:
+            event_to_edit = event_data
+            event_id = ev_id
+            break
+    
+    if not event_to_edit:
+        await interaction.followup.send("❌ No event found in this ticket channel. Use `/event-create` to create an event first.", ephemeral=True)
+        return
+    
+    # Validate input parameters
+    if not (0 <= hour <= 23):
+        await interaction.followup.send("❌ Hour must be between 0 and 23", ephemeral=True)
+        return
+    
+    if not (1 <= date <= 31):
+        await interaction.followup.send("❌ Date must be between 1 and 31", ephemeral=True)
+        return
+
+    if not (1 <= month <= 12):
+        await interaction.followup.send("❌ Month must be between 1 and 12", ephemeral=True)
+        return
+            
+    if not (0 <= minute <= 59):
+        await interaction.followup.send("❌ Minute must be between 0 and 59", ephemeral=True)
+        return
+
     try:
-        # Check if there are any scheduled events
-        if not scheduled_events:
-            await interaction.response.send_message(f"❌ No scheduled events found to edit.\n\n**Debug Info:**\n• Scheduled events count: {len(scheduled_events)}\n• Events in memory: {list(scheduled_events.keys()) if scheduled_events else 'None'}", ephemeral=True)
-            return
+        # Create new datetime
+        current_year = datetime.datetime.now().year
+        new_datetime = datetime.datetime(current_year, month, date, hour, minute)
         
-        # Create dropdown with event names
-        class EventEditView(View):
-            def __init__(self):
-                super().__init__(timeout=60)
-                
-            @discord.ui.select(
-                placeholder="Select an event to edit...",
-                options=[
-                    discord.SelectOption(
-                        label=f"{event_data.get('team1_captain').display_name if event_data.get('team1_captain') else 'Unknown'} VS {event_data.get('team2_captain').display_name if event_data.get('team2_captain') else 'Unknown'}",
-                        description=f"{event_data.get('round', 'Unknown Round')} - {event_data.get('date_str', 'No date')} at {event_data.get('time_str', 'No time')}",
-                        value=event_id
-                    )
-                    for event_id, event_data in list(scheduled_events.items())[:25]  # Discord limit of 25 options
-                ]
-            )
-            async def select_event(self, select_interaction: discord.Interaction, select: discord.ui.Select):
-                if select_interaction.user != interaction.user:
-                    await select_interaction.response.send_message("❌ You can only edit events you selected.", ephemeral=True)
-                    return
-                
-                selected_event_id = select.values[0]
-                selected_event = scheduled_events.get(selected_event_id)
-                
-                if not selected_event:
-                    await select_interaction.response.send_message("❌ Selected event not found.", ephemeral=True)
-                    return
-                
-                # Create edit modal
-                class EventEditModal(discord.ui.Modal, title="Edit Event"):
-                    def __init__(self, event_data, guild):
-                        super().__init__()
-                        self.event_data = event_data
-                        self.guild = guild
-                        
-                        # Pre-fill current values
-                        self.team1_captain_input = discord.ui.TextInput(
-                            label="Team 1 Captain (User ID)",
-                            placeholder="Enter Discord User ID",
-                            default=str(getattr(event_data.get('team1_captain'), 'id', '')),
-                            required=True,
-                            max_length=20
-                        )
-                        
-                        self.team2_captain_input = discord.ui.TextInput(
-                            label="Team 2 Captain (User ID)",
-                            placeholder="Enter Discord User ID", 
-                            default=str(getattr(event_data.get('team2_captain'), 'id', '')),
-                            required=True,
-                            max_length=20
-                        )
-                        
-                        self.hour_input = discord.ui.TextInput(
-                            label="Hour (0-23)",
-                            placeholder="Enter hour",
-                            default=str(event_data.get('datetime').hour if event_data.get('datetime') else ''),
-                            required=True,
-                            max_length=2
-                        )
-                        
-                        self.minute_input = discord.ui.TextInput(
-                            label="Minute (0-59)",
-                            placeholder="Enter minute",
-                            default=str(event_data.get('datetime').minute if event_data.get('datetime') else ''),
-                            required=True,
-                            max_length=2
-                        )
-                        
-                        self.date_input = discord.ui.TextInput(
-                            label="Date (1-31)",
-                            placeholder="Enter date",
-                            default=str(event_data.get('datetime').day if event_data.get('datetime') else ''),
-                            required=True,
-                            max_length=2
-                        )
-                        
-                        self.month_input = discord.ui.TextInput(
-                            label="Month (1-12)",
-                            placeholder="Enter month",
-                            default=str(event_data.get('datetime').month if event_data.get('datetime') else ''),
-                            required=True,
-                            max_length=2
-                        )
-                        
-                        self.round_input = discord.ui.TextInput(
-                            label="Round",
-                            placeholder="Enter round (e.g., R1, R2, Final)",
-                            default=event_data.get('round', ''),
-                            required=True,
-                            max_length=50
-                        )
-                        
-                        self.tournament_input = discord.ui.TextInput(
-                            label="Tournament",
-                            placeholder="Enter tournament name",
-                            default=event_data.get('tournament', ''),
-                            required=True,
-                            max_length=100
-                        )
-                        
-                        self.group_input = discord.ui.TextInput(
-                            label="Group (Optional)",
-                            placeholder="Enter group (e.g., Group A, Group B, Winner, Loser)",
-                            default=event_data.get('group', ''),
-                            required=False,
-                            max_length=20
-                        )
-                        
-                        # Add all inputs
-                        self.add_item(self.team1_captain_input)
-                        self.add_item(self.team2_captain_input)
-                        self.add_item(self.hour_input)
-                        self.add_item(self.minute_input)
-                        self.add_item(self.date_input)
-                        self.add_item(self.month_input)
-                        self.add_item(self.round_input)
-                        self.add_item(self.tournament_input)
-                        self.add_item(self.group_input)
-                    
-                    async def on_submit(self, modal_interaction: discord.Interaction):
-                        await modal_interaction.response.defer(ephemeral=True)
-                        
-                        try:
-                            # Parse and validate inputs
-                            team1_id = int(self.team1_captain_input.value.strip())
-                            team2_id = int(self.team2_captain_input.value.strip())
-                            hour = int(self.hour_input.value.strip())
-                            minute = int(self.minute_input.value.strip())
-                            date = int(self.date_input.value.strip())
-                            month = int(self.month_input.value.strip())
-                            round_label = self.round_input.value.strip()
-                            tournament = self.tournament_input.value.strip()
-                            group_label = self.group_input.value.strip() if self.group_input.value.strip() else None
-                            
-                            # Validate inputs
-                            if not (0 <= hour <= 23):
-                                await modal_interaction.followup.send("❌ Hour must be between 0 and 23", ephemeral=True)
-                                return
-                            
-                            if not (0 <= minute <= 59):
-                                await modal_interaction.followup.send("❌ Minute must be between 0 and 59", ephemeral=True)
-                                return
-                                
-                            if not (1 <= date <= 31):
-                                await modal_interaction.followup.send("❌ Date must be between 1 and 31", ephemeral=True)
-                                return
-                                
-                            if not (1 <= month <= 12):
-                                await modal_interaction.followup.send("❌ Month must be between 1 and 12", ephemeral=True)
-                                return
-                            
-                            # Get team captains
-                            team1_captain = self.guild.get_member(team1_id)
-                            team2_captain = self.guild.get_member(team2_id)
-                            
-                            if not team1_captain:
-                                await modal_interaction.followup.send(f"❌ Team 1 captain with ID {team1_id} not found in this server.", ephemeral=True)
-                                return
-                                
-                            if not team2_captain:
-                                await modal_interaction.followup.send(f"❌ Team 2 captain with ID {team2_id} not found in this server.", ephemeral=True)
-                                return
-                            
-                            # Create new datetime
-                            current_year = datetime.datetime.now().year
-                            new_datetime = datetime.datetime(current_year, month, date, hour, minute)
-                            
-                            # Calculate time differences
-                            time_info = calculate_time_difference(new_datetime)
-                            
-                            # Update event data
-                            selected_event['datetime'] = new_datetime
-                            selected_event['time_str'] = time_info['utc_time']
-                            selected_event['date_str'] = f"{date:02d}/{month:02d}"
-                            selected_event['round'] = round_label
-                            selected_event['group'] = group_label
-                            selected_event['tournament'] = tournament
-                            selected_event['team1_captain'] = team1_captain
-                            selected_event['team2_captain'] = team2_captain
-                            selected_event['minutes_left'] = time_info['minutes_remaining']
-                            
-                            # Save updated events
-                            save_scheduled_events()
-                            
-                            # Build success message with group information
-                            success_message = f"✅ Event updated successfully!\n\n**Updated Event:**\n• {team1_captain.display_name} VS {team2_captain.display_name}\n• {round_label} - {tournament}\n• {time_info['utc_time']} ({date:02d}/{month:02d})"
-                            if group_label:
-                                success_message += f"\n• Group: {group_label}"
-                            
-                            await modal_interaction.followup.send(success_message, ephemeral=True)
-                            
-                        except ValueError as e:
-                            await modal_interaction.followup.send(f"❌ Invalid input format. Please check your values.\nError: {str(e)}", ephemeral=True)
-                        except Exception as e:
-                            await modal_interaction.followup.send(f"❌ Error updating event: {str(e)}", ephemeral=True)
-                
-                # Show edit modal
-                edit_modal = EventEditModal(selected_event, interaction.guild)
-                await select_interaction.response.send_modal(edit_modal)
+        # Calculate time differences
+        time_info = calculate_time_difference(new_datetime)
         
-        # Create embed for event selection
-        embed = discord.Embed(
-            title="📝 Edit Event",
-            description="Select an event to edit from the dropdown below.",
-            color=discord.Color.blue(),
-            timestamp=discord.utils.utcnow()
-        )
+        # Resolve round label from choice
+        round_label = round.value if isinstance(round, app_commands.Choice) else str(round)
         
-        embed.add_field(
-            name="📋 Available Events",
-            value=f"Found {len(scheduled_events)} scheduled event(s)",
-            inline=False
-        )
+        # Update event data
+        event_to_edit['datetime'] = new_datetime
+        event_to_edit['time_str'] = time_info['utc_time']
+        event_to_edit['date_str'] = f"{date:02d}/{month:02d}"
+        event_to_edit['round'] = round_label
+        event_to_edit['group'] = group.value if group else None
+        event_to_edit['tournament'] = tournament
+        event_to_edit['team1_captain'] = team_1_captain
+        event_to_edit['team2_captain'] = team_2_captain
+        event_to_edit['minutes_left'] = time_info['minutes_remaining']
         
-        embed.set_footer(text=f"Event Management • {ORGANIZATION_NAME}")
+        # Save updated events
+        save_scheduled_events()
         
-        view = EventEditView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        # Build success message with group information
+        success_message = f"✅ Event updated successfully!\n\n**Updated Event:**\n• {team_1_captain.display_name} VS {team_2_captain.display_name}\n• {round_label} - {tournament}\n• {time_info['utc_time']} ({date:02d}/{month:02d})"
+        if group:
+            success_message += f"\n• Group: {group.value}"
+        
+        await interaction.followup.send(success_message, ephemeral=True)
         
     except Exception as e:
-        await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
+        await interaction.followup.send(f"❌ Error updating event: {str(e)}", ephemeral=True)
 
 
 # Ticket Status Commands
 @bot.command(name="sh")
 async def ticket_sh(ctx):
     """Set ticket status to green (🟢) - Short"""
-    if not ctx.channel.name.startswith("ticket-"):
-        await ctx.send("❌ This command can only be used in ticket channels.", delete_after=5)
-        return
     
     try:
         # Get current channel name without status indicators
@@ -2641,9 +2533,6 @@ async def ticket_sh(ctx):
 @bot.command(name="dd")
 async def ticket_dd(ctx):
     """Set ticket status to red (🔴) - Dead"""
-    if not ctx.channel.name.startswith("ticket-"):
-        await ctx.send("❌ This command can only be used in ticket channels.", delete_after=5)
-        return
     
     try:
         # Get current channel name without status indicators
@@ -2661,9 +2550,6 @@ async def ticket_dd(ctx):
 @bot.command(name="wt")
 async def ticket_wt(ctx):
     """Set ticket status to yellow (🟡) - Wait"""
-    if not ctx.channel.name.startswith("ticket-"):
-        await ctx.send("❌ This command can only be used in ticket channels.", delete_after=5)
-        return
     
     try:
         # Get current channel name without status indicators
@@ -2681,9 +2567,6 @@ async def ticket_wt(ctx):
 @bot.command(name="ov")
 async def ticket_ov(ctx):
     """Set ticket status to checkbox (✅) - Over"""
-    if not ctx.channel.name.startswith("ticket-"):
-        await ctx.send("❌ This command can only be used in ticket channels.", delete_after=5)
-        return
     
     try:
         # Get current channel name without status indicators
