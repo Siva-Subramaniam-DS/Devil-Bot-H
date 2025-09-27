@@ -1349,18 +1349,46 @@ async def on_message(message):
     # Extract command from message
     command = message.content.lower().strip()
     
-    # Handle ticket status commands (?sh, ?dq, ?dd)
-    if command == '?sh':
-        # Green circle status - Schedule/Hold
-        await message.channel.send("🟢")
-        
-    elif command == '?dq':
-        # Red circle status - Disqualify
-        await message.channel.send("🔴")
-        
-    elif command == '?dd':
-        # Checkmark status - Done/Complete
-        await message.channel.send("✅")
+    # Handle ticket status commands (?sh, ?dq, ?dd) - modify channel name prefix
+    if command in ['?sh', '?dq', '?dd']:
+        try:
+            # Get the current channel
+            channel = message.channel
+            
+            # Determine the new prefix based on command
+            if command == '?sh':
+                new_prefix = "🟢"
+            elif command == '?dq':
+                new_prefix = "🔴"
+            elif command == '?dd':
+                new_prefix = "✅"
+            
+            # Get current channel name
+            current_name = channel.name
+            
+            # Remove existing status prefixes if they exist
+            clean_name = current_name
+            status_prefixes = ["🟢", "🔴", "✅"]
+            for prefix in status_prefixes:
+                if clean_name.startswith(prefix):
+                    clean_name = clean_name[len(prefix):].lstrip("-").lstrip()
+                    break
+            
+            # Create new channel name with the status prefix
+            new_name = f"{new_prefix}-{clean_name}"
+            
+            # Update channel name
+            await channel.edit(name=new_name)
+            
+            # Send confirmation message
+            await message.channel.send(f"✅ Ticket prefix updated to: {new_name}")
+            
+        except discord.Forbidden:
+            await message.channel.send("❌ I don't have permission to edit this channel's name.")
+        except discord.HTTPException as e:
+            await message.channel.send(f"❌ Error updating channel name: {e}")
+        except Exception as e:
+            await message.channel.send(f"❌ Unexpected error: {e}")
         
     elif command == '?b':
         # Challonge URL response
