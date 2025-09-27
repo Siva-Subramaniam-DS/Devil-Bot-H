@@ -776,12 +776,24 @@ async def send_ten_minute_reminder(event_id: str, team1_captain: discord.Member,
             print(f"No event channel provided for event {event_id}")
             return
 
-        # Get the latest judge from scheduled_events if available
+        # Get the latest data from scheduled_events if available
         resolved_judge = judge
+        resolved_team1_captain = team1_captain
+        resolved_team2_captain = team2_captain
+        
         if event_id in scheduled_events:
-            stored_judge = scheduled_events[event_id].get('judge')
+            event_data = scheduled_events[event_id]
+            stored_judge = event_data.get('judge')
             if stored_judge:
                 resolved_judge = stored_judge
+            
+            # Get updated captain information
+            stored_team1 = event_data.get('team1_captain')
+            stored_team2 = event_data.get('team2_captain')
+            if stored_team1:
+                resolved_team1_captain = stored_team1
+            if stored_team2:
+                resolved_team2_captain = stored_team2
 
         # Create reminder embed
         embed = discord.Embed(
@@ -791,16 +803,16 @@ async def send_ten_minute_reminder(event_id: str, team1_captain: discord.Member,
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="🕒 Match Time", value=f"<t:{int(match_time.timestamp())}:F>", inline=False)
-        embed.add_field(name="👥 Team Captains", value=f"{team1_captain.mention} vs {team2_captain.mention}", inline=False)
+        embed.add_field(name="👥 Team Captains", value=f"<@{resolved_team1_captain.id}> vs <@{resolved_team2_captain.id}>", inline=False)
         if resolved_judge:
-            embed.add_field(name="👨‍⚖️ Judge", value=f"{resolved_judge.mention}", inline=False)
+            embed.add_field(name="👨‍⚖️ Judge", value=f"<@{resolved_judge.id}>", inline=False)
         embed.add_field(name="� ActAion Required", value="Please prepare for the match and join the designated channel.", inline=False)
         embed.set_footer(text="Tournament Management System")
 
         # Send notification with pings
-        pings = f"{team1_captain.mention} {team2_captain.mention}"
+        pings = f"<@{resolved_team1_captain.id}> <@{resolved_team2_captain.id}>"
         if resolved_judge:
-            pings = f"{resolved_judge.mention} " + pings
+            pings = f"<@{resolved_judge.id}> " + pings
         notification_text = f"🔔 **MATCH REMINDER**\n\n{pings}\n\nYour match starts in **10 minutes**!"
 
         await event_channel.send(content=notification_text, embed=embed)
