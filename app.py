@@ -1331,6 +1331,45 @@ def has_event_result_permission(interaction):
     return head_organizer_role is not None or judge_role is not None
 
 @bot.event
+async def on_message(message):
+    """Handle auto-response commands for ticket management"""
+    # Ignore messages from the bot itself
+    if message.author == bot.user:
+        return
+    
+    # Only process messages that start with ? and are in specific channels
+    if not message.content.startswith('?'):
+        return
+    
+    # Check if the command should be restricted to specific channels
+    # For now, allow in all channels, but you can add restrictions here
+    # Example: if message.channel.id not in [CHANNEL_IDS["take_schedule"], ...]:
+    #     return
+    
+    # Extract command from message
+    command = message.content.lower().strip()
+    
+    # Handle ticket status commands (?sh, ?dq, ?dd)
+    if command == '?sh':
+        # Green circle status - Schedule/Hold
+        await message.channel.send("🟢")
+        
+    elif command == '?dq':
+        # Red circle status - Disqualify
+        await message.channel.send("🔴")
+        
+    elif command == '?dd':
+        # Checkmark status - Done/Complete
+        await message.channel.send("✅")
+        
+    elif command == '?b':
+        # Challonge URL response
+        await message.channel.send("https://challonge.com/King_of_the_Seas_S2")
+    
+    # Process other bot commands (important for command processing)
+    await bot.process_commands(message)
+
+@bot.event
 async def on_ready():
     print(f"✅ Bot is online as {bot.user}")
     print(f"🆔 Bot ID: {bot.user.id}")
