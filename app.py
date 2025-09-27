@@ -2380,15 +2380,15 @@ async def exchange_judge(
 
 @tree.command(name="event-edit", description="Edit the event in this ticket channel (Head Organizer/Head Helper/Helper Team only)")
 @app_commands.describe(
-    team_1_captain="Captain of team 1",
-    team_2_captain="Captain of team 2", 
-    hour="Hour of the event (0-23)",
-    minute="Minute of the event (0-59)",
-    date="Date of the event",
-    month="Month of the event",
-    round="Round label",
-    tournament="Tournament name (e.g. King of the Seas, Summer Cup, etc.)",
-    group="Group assignment (A-J) or Winner/Loser"
+    team_1_captain="Captain of team 1 (optional)",
+    team_2_captain="Captain of team 2 (optional)", 
+    hour="Hour of the event (0-23) (optional)",
+    minute="Minute of the event (0-59) (optional)",
+    date="Date of the event (optional)",
+    month="Month of the event (optional)",
+    round="Round label (optional)",
+    tournament="Tournament name (optional)",
+    group="Group assignment (A-J) or Winner/Loser (optional)"
 )
 @app_commands.choices(
     round=[
@@ -2423,14 +2423,14 @@ async def exchange_judge(
 )
 async def event_edit(
     interaction: discord.Interaction,
-    team_1_captain: discord.Member,
-    team_2_captain: discord.Member,
-    hour: int,
-    minute: int,
-    date: int,
-    month: int,
-    round: app_commands.Choice[str],
-    tournament: str,
+    team_1_captain: discord.Member = None,
+    team_2_captain: discord.Member = None,
+    hour: int = None,
+    minute: int = None,
+    date: int = None,
+    month: int = None,
+    round: app_commands.Choice[str] = None,
+    tournament: str = None,
     group: app_commands.Choice[str] = None
 ):
     """Edit the event in this ticket channel"""
@@ -2459,127 +2459,128 @@ async def event_edit(
         await interaction.followup.send("❌ No event found in this ticket channel. Use `/event-create` to create an event first.", ephemeral=True)
         return
     
-    # Validate input parameters
-    if not (0 <= hour <= 23):
+    # Check if at least one field is provided
+    if not any([team_1_captain, team_2_captain, hour is not None, minute is not None, date is not None, month is not None, round, tournament, group]):
+        await interaction.followup.send("❌ Please provide at least one field to update.", ephemeral=True)
+        return
+    
+    # Validate input parameters only if provided
+    if hour is not None and not (0 <= hour <= 23):
         await interaction.followup.send("❌ Hour must be between 0 and 23", ephemeral=True)
         return
     
-    if not (1 <= date <= 31):
+    if date is not None and not (1 <= date <= 31):
         await interaction.followup.send("❌ Date must be between 1 and 31", ephemeral=True)
         return
 
-    if not (1 <= month <= 12):
+    if month is not None and not (1 <= month <= 12):
         await interaction.followup.send("❌ Month must be between 1 and 12", ephemeral=True)
         return
             
-    if not (0 <= minute <= 59):
+    if minute is not None and not (0 <= minute <= 59):
         await interaction.followup.send("❌ Minute must be between 0 and 59", ephemeral=True)
         return
 
     try:
+        # Get current event data
+        current_datetime = event_to_edit.get('datetime', datetime.datetime.now())
+        current_hour = hour if hour is not None else current_datetime.hour
+        current_minute = minute if minute is not None else current_datetime.minute
+        current_date = date if date is not None else current_datetime.day
+        current_month = month if month is not None else current_datetime.month
+        
         # Create new datetime
         current_year = datetime.datetime.now().year
-        new_datetime = datetime.datetime(current_year, month, date, hour, minute)
+        new_datetime = datetime.datetime(current_year, current_month, current_date, current_hour, current_minute)
         
         # Calculate time differences
         time_info = calculate_time_difference(new_datetime)
         
-        # Resolve round label from choice
-        round_label = round.value if isinstance(round, app_commands.Choice) else str(round)
-        
-        # Update event data
-        event_to_edit['datetime'] = new_datetime
-        event_to_edit['time_str'] = time_info['utc_time']
-        event_to_edit['date_str'] = f"{date:02d}/{month:02d}"
-        event_to_edit['round'] = round_label
-        event_to_edit['group'] = group.value if group else None
-        event_to_edit['tournament'] = tournament
-        event_to_edit['team1_captain'] = team_1_captain
-        event_to_edit['team2_captain'] = team_2_captain
-        event_to_edit['minutes_left'] = time_info['minutes_remaining']
+        # Update only provided fields
+        if team_1_captain:
+            event_to_edit['team1_captain'] = team_1_captain
+        if team_2_captain:
+            event_to_edit['team2_captain'] = team_2_captain
+        if hour is not None or minute is not None or date is not None or month is not None:
+            event_to_edit['datetime'] = new_datetime
+            event_to_edit['time_str'] = time_info['utc_time']
+            event_to_edit['date_str'] = f"{current_date:02d}/{current_month:02d}"
+            event_to_edit['minutes_left'] = time_info['minutes_remaining']
+        if round:
+            round_label = round.value if isinstance(round, app_commands.Choice) else str(round)
+            event_to_edit['round'] = round_label
+        if tournament:
+            event_to_edit['tournament'] = tournament
+        if group:
+            event_to_edit['group'] = group.value
         
         # Save updated events
         save_scheduled_events()
         
-        # Build success message with group information
-        success_message = f"✅ Event updated successfully!\n\n**Updated Event:**\n• {team_1_captain.display_name} VS {team_2_captain.display_name}\n• {round_label} - {tournament}\n• {time_info['utc_time']} ({date:02d}/{month:02d})"
-        if group:
-            success_message += f"\n• Group: {group.value}"
+        # Schedule the 10-minute reminder with updated event data
+        try:
+            await schedule_ten_minute_reminder(event_id, team1_captain, team2_captain, event_to_edit.get('judge'), interaction.channel, new_datetime)
+        except Exception as e:
+            print(f"Error scheduling reminder for updated event {event_id}: {e}")
         
-        await interaction.followup.send(success_message, ephemeral=True)
+        # Get updated event details for public posting
+        team1_captain = event_to_edit.get('team1_captain')
+        team2_captain = event_to_edit.get('team2_captain')
+        round_info = event_to_edit.get('round', 'Unknown')
+        tournament_info = event_to_edit.get('tournament', 'Unknown')
+        time_info_display = event_to_edit.get('time_str', 'Unknown')
+        date_info_display = event_to_edit.get('date_str', 'Unknown')
+        group_info = event_to_edit.get('group', '')
+        
+        # Create public embed for updated event (similar to event-create)
+        embed = discord.Embed(
+            title="📝 Event Updated",
+            description=f"**Event has been updated by {interaction.user.mention}**",
+            color=discord.Color.orange(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # Event Details Section
+        embed.add_field(
+            name="📋 Updated Event Details", 
+            value=f"**Team 1 Captain:** {team1_captain.mention if team1_captain else 'Unknown'} `@{team1_captain.name if team1_captain else 'Unknown'}`\n"
+                  f"**Team 2 Captain:** {team2_captain.mention if team2_captain else 'Unknown'} `@{team2_captain.name if team2_captain else 'Unknown'}`\n"
+                  f"**UTC Time:** {time_info_display}\n"
+                  f"**Local Time:** <t:{int(new_datetime.timestamp())}:F> (<t:{int(new_datetime.timestamp())}:R>)\n"
+                  f"**Round:** {round_info}\n"
+                  f"**Tournament:** {tournament_info}\n"
+                  f"**Channel:** {interaction.channel.mention}",
+            inline=False
+        )
+        
+        if group_info:
+            embed.add_field(
+                name="🏆 Group Assignment",
+                value=f"**Group:** {group_info}",
+                inline=False
+            )
+        
+        # Add spacing
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        
+        # Captains Section
+        captains_text = f"**Captains**\n"
+        captains_text += f"▪ Team1 Captain: {team1_captain.mention if team1_captain else 'Unknown'} `@{team1_captain.name if team1_captain else 'Unknown'}`\n"
+        captains_text += f"▪ Team2 Captain: {team2_captain.mention if team2_captain else 'Unknown'} `@{team2_captain.name if team2_captain else 'Unknown'}`"
+        embed.add_field(name="", value=captains_text, inline=False)
+        
+        embed.set_footer(text=f"Event Updated • {ORGANIZATION_NAME}")
+        
+        # Post the updated event publicly in the channel
+        await interaction.channel.send(embed=embed)
+        
+        # Send private confirmation to the user who edited
+        await interaction.followup.send("✅ Event updated successfully and posted in the channel!", ephemeral=True)
         
     except Exception as e:
         await interaction.followup.send(f"❌ Error updating event: {str(e)}", ephemeral=True)
 
 
-# Ticket Status Commands
-@bot.command(name="sh")
-async def ticket_sh(ctx):
-    """Set ticket status to green (🟢) - Short"""
-    
-    try:
-        # Get current channel name without status indicators
-        current_name = ctx.channel.name
-        # Remove existing status indicators
-        clean_name = current_name.replace("🟢", "").replace("🔴", "").replace("🟡", "").replace("✅", "").strip()
-        
-        # Add green status
-        new_name = f"🟢 {clean_name}"
-        await ctx.channel.edit(name=new_name)
-        await ctx.send("✅ Ticket status set to **Short** 🟢", delete_after=3)
-    except Exception as e:
-        await ctx.send(f"❌ Error updating channel name: {str(e)}", delete_after=5)
-
-@bot.command(name="dd")
-async def ticket_dd(ctx):
-    """Set ticket status to red (🔴) - Dead"""
-    
-    try:
-        # Get current channel name without status indicators
-        current_name = ctx.channel.name
-        # Remove existing status indicators
-        clean_name = current_name.replace("🟢", "").replace("🔴", "").replace("🟡", "").replace("✅", "").strip()
-        
-        # Add red status
-        new_name = f"🔴 {clean_name}"
-        await ctx.channel.edit(name=new_name)
-        await ctx.send("✅ Ticket status set to **Dead** 🔴", delete_after=3)
-    except Exception as e:
-        await ctx.send(f"❌ Error updating channel name: {str(e)}", delete_after=5)
-
-@bot.command(name="wt")
-async def ticket_wt(ctx):
-    """Set ticket status to yellow (🟡) - Wait"""
-    
-    try:
-        # Get current channel name without status indicators
-        current_name = ctx.channel.name
-        # Remove existing status indicators
-        clean_name = current_name.replace("🟢", "").replace("🔴", "").replace("🟡", "").replace("✅", "").strip()
-        
-        # Add yellow status
-        new_name = f"🟡 {clean_name}"
-        await ctx.channel.edit(name=new_name)
-        await ctx.send("✅ Ticket status set to **Wait** 🟡", delete_after=3)
-    except Exception as e:
-        await ctx.send(f"❌ Error updating channel name: {str(e)}", delete_after=5)
-
-@bot.command(name="ov")
-async def ticket_ov(ctx):
-    """Set ticket status to checkbox (✅) - Over"""
-    
-    try:
-        # Get current channel name without status indicators
-        current_name = ctx.channel.name
-        # Remove existing status indicators
-        clean_name = current_name.replace("🟢", "").replace("🔴", "").replace("🟡", "").replace("✅", "").strip()
-        
-        # Add checkbox status
-        new_name = f"✅ {clean_name}"
-        await ctx.channel.edit(name=new_name)
-        await ctx.send("✅ Ticket status set to **Over** ✅", delete_after=3)
-    except Exception as e:
-        await ctx.send(f"❌ Error updating channel name: {str(e)}", delete_after=5)
 
 
 if __name__ == "__main__":
