@@ -1349,8 +1349,8 @@ async def on_message(message):
     # Extract command from message
     command = message.content.lower().strip()
     
-    # Handle ticket status commands (?sh, ?dq, ?dd) - modify channel name prefix
-    if command in ['?sh', '?dq', '?dd']:
+    # Handle ticket status commands (?sh, ?dq, ?dd, ?ho) - modify channel name prefix
+    if command in ['?sh', '?dq', '?dd', '?ho']:
         try:
             # Get the current channel
             channel = message.channel
@@ -1362,13 +1362,15 @@ async def on_message(message):
                 new_prefix = "🔴"
             elif command == '?dd':
                 new_prefix = "✅"
+            elif command == '?ho':
+                new_prefix = "🟡"
             
             # Get current channel name
             current_name = channel.name
             
             # Remove existing status prefixes if they exist
             clean_name = current_name
-            status_prefixes = ["🟢", "🔴", "✅"]
+            status_prefixes = ["🟢", "🔴", "✅", "🟡"]
             for prefix in status_prefixes:
                 if clean_name.startswith(prefix):
                     clean_name = clean_name[len(prefix):].lstrip("-").lstrip()
@@ -1380,16 +1382,43 @@ async def on_message(message):
             # Update channel name
             await channel.edit(name=new_name)
             
+            # Delete the original command message after successful execution
+            try:
+                await message.delete()
+            except discord.Forbidden:
+                pass  # Ignore if we can't delete the message
+            except Exception:
+                pass  # Ignore any other deletion errors
+            
         except discord.Forbidden:
-            await message.channel.send("❌ I don't have permission to edit this channel's name.")
+            response = await message.channel.send("❌ I don't have permission to edit this channel's name.")
+            try:
+                await message.delete()
+            except:
+                pass
         except discord.HTTPException as e:
-            await message.channel.send(f"❌ Error updating channel name: {e}")
+            response = await message.channel.send(f"❌ Error updating channel name: {e}")
+            try:
+                await message.delete()
+            except:
+                pass
         except Exception as e:
-            await message.channel.send(f"❌ Unexpected error: {e}")
+            response = await message.channel.send(f"❌ Unexpected error: {e}")
+            try:
+                await message.delete()
+            except:
+                pass
         
     elif command == '?b':
         # Challonge URL response
-        await message.channel.send("https://challonge.com/King_of_the_Seas_S2")
+        response = await message.channel.send("https://challonge.com/King_of_the_Seas_S2")
+        # Delete the original command message
+        try:
+            await message.delete()
+        except discord.Forbidden:
+            pass  # Ignore if we can't delete the message
+        except Exception:
+            pass  # Ignore any other deletion errors
     
     # Process other bot commands (important for command processing)
     await bot.process_commands(message)
@@ -2776,6 +2805,125 @@ async def general_tie_breaker(
     embed.set_footer(text=f"Tie Breaker • Calculated by {interaction.user.display_name}")
     
     await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="add-captain", description="Add two captains to a tournament match and rename channel")
+@app_commands.describe(
+    bracket="Bracket name (optional)",
+    round="Round (R1-R10, Q, SF, Final)",
+    captain1="First captain",
+    captain2="Second captain"
+)
+@app_commands.choices(
+    round=[
+        app_commands.Choice(name="R1", value="R1"),
+        app_commands.Choice(name="R2", value="R2"),
+        app_commands.Choice(name="R3", value="R3"),
+        app_commands.Choice(name="R4", value="R4"),
+        app_commands.Choice(name="R5", value="R5"),
+        app_commands.Choice(name="R6", value="R6"),
+        app_commands.Choice(name="R7", value="R7"),
+        app_commands.Choice(name="R8", value="R8"),
+        app_commands.Choice(name="R9", value="R9"),
+        app_commands.Choice(name="R10", value="R10"),
+        app_commands.Choice(name="Q (Quarter-Final)", value="Q"),
+        app_commands.Choice(name="SF (Semi-Final)", value="SF"),
+        app_commands.Choice(name="Final", value="Final")
+    ]
+)
+async def add_captain(interaction: discord.Interaction, round: str, captain1: discord.Member, captain2: discord.Member, bracket: str = None):
+    """Add two captains to a tournament match and rename the channel with tournament rules."""
+    try:
+        # Check permissions - only Head Organizer, Head Helper or Helper Team can add captains
+        head_organizer_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_organizer"])
+        head_helper_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_helper"])
+        helper_team_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["helper_team"])
+        
+        if not any([head_organizer_role, head_helper_role, helper_team_role]):
+            await interaction.response.send_message("❌ You don't have permission to use this command. Only Head Organizer, Head Helper, or Helper Team can add captains.", ephemeral=True)
+            return
+        
+        # Validate round parameter
+        valid_rounds = ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "Q", "SF", "Final"]
+        if round not in valid_rounds:
+            await interaction.response.send_message("❌ Invalid round. Please select R1-R10, Q, SF, or Final.", ephemeral=True)
+            return
+        
+        # Get current channel
+        channel = interaction.channel
+        
+        # Create new channel name
+        if bracket:
+            new_name = f"{bracket}-{round.lower()}-{captain1.display_name.lower()}-vs-{captain2.display_name.lower()}"
+        else:
+            new_name = f"{round.lower()}-{captain1.display_name.lower()}-vs-{captain2.display_name.lower()}"
+        
+        # Remove special characters and spaces, replace with hyphens
+        new_name = re.sub(r'[^a-zA-Z0-9\-]', '-', new_name)
+        new_name = re.sub(r'-+', '-', new_name)  # Replace multiple hyphens with single hyphen
+        new_name = new_name.strip('-')  # Remove leading/trailing hyphens
+        
+        # Ensure channel name is within Discord's limits (100 characters max)
+        if len(new_name) > 100:
+            new_name = new_name[:100]
+        
+        # Rename the channel
+        try:
+            await channel.edit(name=new_name)
+            await interaction.response.send_message(f"✅ Channel renamed to `{new_name}`", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I don't have permission to rename this channel.", ephemeral=True)
+            return
+        except discord.HTTPException as e:
+            await interaction.response.send_message(f"❌ Failed to rename channel: {e}", ephemeral=True)
+            return
+        
+        # Send tournament rules message
+        rules_embed = discord.Embed(
+            title="🏆 Tournament Match Setup",
+            description="Please use this channel for all tournament discussions.",
+            color=0x00ff00
+        )
+        
+        rules_embed.add_field(
+            name="📋 Tournament Information",
+            value=(
+                "• Refer to [🏆 | BRACKET](https://discord.com/channels/1038883381745827931/1175583664290144306) for match schedules and pairings.\n"
+                "• Refer to [📣 | EVENT-ANNOUNCEMENT](https://discord.com/channels/1038883381745827931/1175583555888361472) for official updates.\n"
+                "• Refer to [📄 | TOURNAMENT-RULES](https://discord.com/channels/1038883381745827931/1175583783962021998) for tournament guidelines and regulations."
+            ),
+            inline=False
+        )
+        
+        rules_embed.add_field(
+            name="👥 Match Participants",
+            value=f"**Round:** {round}\n**Captain 1:** {captain1.mention}\n**Captain 2:** {captain2.mention}",
+            inline=False
+        )
+        
+        rules_embed.add_field(
+            name="🆘 Need Help?",
+            value="If you require any assistance, please ping <@&1175619471671566406> and they will be happy to assist.",
+            inline=False
+        )
+        
+        rules_embed.add_field(
+            name="🤝 Cooperation",
+            value="We appreciate your cooperation and wish you a competitive and fair tournament.",
+            inline=False
+        )
+        
+        rules_embed.set_footer(text=f"powered by naval warfare academy | {interaction.user.display_name} ✰—• • {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}")
+        
+        # Send the rules message
+        await channel.send(embed=rules_embed)
+        
+        # Ping helper team
+        await channel.send("<@&1175619471671566406> - New match channel setup complete!")
+        
+    except Exception as e:
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+        print(f"Error in add_captain command: {e}")
 
 
 if __name__ == "__main__":
