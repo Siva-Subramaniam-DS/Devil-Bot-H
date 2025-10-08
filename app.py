@@ -2854,9 +2854,9 @@ async def add_captain(interaction: discord.Interaction, round: str, captain1: di
         
         # Create new channel name
         if bracket:
-            new_name = f"{bracket}-{round.lower()}-{captain1.display_name.lower()}-vs-{captain2.display_name.lower()}"
+            new_name = f"{bracket}-{round.lower()}-{captain1.name.lower()}-vs-{captain2.name.lower()}"
         else:
-            new_name = f"{round.lower()}-{captain1.display_name.lower()}-vs-{captain2.display_name.lower()}"
+            new_name = f"{round.lower()}-{captain1.name.lower()}-vs-{captain2.name.lower()}"
         
         # Remove special characters and spaces, replace with hyphens
         new_name = re.sub(r'[^a-zA-Z0-9\-]', '-', new_name)
@@ -2924,7 +2924,7 @@ async def add_captain(interaction: discord.Interaction, round: str, captain1: di
             inline=False
         )
         
-        rules_embed.set_footer(text=f"[Organization Name] | {interaction.user.name} ✰—• • {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}")
+        rules_embed.set_footer(text=f"{ORGANIZATION_NAME} | {interaction.user.name} ✰—• • {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}")
         
         # Send the rules message with logo
         try:
