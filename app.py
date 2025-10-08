@@ -2068,97 +2068,6 @@ async def time(interaction: discord.Interaction):
 
 ## Removed test-poster command per request
 
-@tree.command(name="choose", description="Randomly choose from a list of options or maps")
-@app_commands.describe(
-    options="List of options separated by commas, or a number (1-20) for maps"
-)
-async def choose(interaction: discord.Interaction, options: str):
-    """Randomly selects one option from a comma-separated list or predefined maps"""
-    
-    import random
-    
-    # Predefined map list
-    maps = [
-        "New Storm (2024)",
-        "Arid Frontier", 
-        "Islands of Iceland",
-        "Unexplored Rocks",
-        "Arctic",
-        "Lost City",
-        "Polar Frontier",
-        "Hidden Dragon",
-        "Monstrous Maelstrom",
-        "Two Samurai",
-        "Stone Peaks",
-        "Viking Bay",
-        "Greenlands",
-        "Old Storm"
-    ]
-    
-    # Check if input is a number (for map selection)
-    if options.strip().isdigit():
-        number = int(options.strip())
-        if 1 <= number <= len(maps):
-            # Randomly select 'number' of maps
-            selected_maps = random.sample(maps, number)
-            
-            embed = discord.Embed(
-                title="🗺️ Random Map Selection 😈The Devil's Spot😈",
-                description=f"**Randomly selected {number} map(s):**",
-                color=discord.Color.green(),
-                timestamp=discord.utils.utcnow()
-            )
-            
-            # Add selected maps as a field
-            selected_maps_text = "\n".join([f"• {map_name}" for map_name in selected_maps])
-            embed.add_field(
-                name=f"🎯 Selected Maps ({number})",
-                value=selected_maps_text,
-                inline=False
-            )
-            
-            embed.set_footer(text="Random Map Selection • 😈The Devil's Spot😈")
-            await interaction.response.send_message(embed=embed)
-            return
-        else:
-            await interaction.response.send_message(f"❌ Please enter a number between 1 and {len(maps)} for map selection.", ephemeral=True)
-            return
-    
-    # Handle comma-separated options (original functionality)
-    option_list = [option.strip() for option in options.split(',') if option.strip()]
-    
-    # Validate input
-    if len(option_list) < 2:
-        await interaction.response.send_message("❌ Please provide at least 2 options separated by commas, or enter a number (1-14) for maps.", ephemeral=True)
-        return
-    
-    if len(option_list) > 20:
-        await interaction.response.send_message("❌ Too many options! Please provide 20 or fewer options.", ephemeral=True)
-        return
-    
-    # Randomly select one option
-    chosen_option = random.choice(option_list)
-    
-    # Create embed
-    embed = discord.Embed(
-        title="🎲 Random Choice",
-        description=f"**Selected:** {chosen_option}",
-        color=discord.Color.gold(),
-        timestamp=discord.utils.utcnow()
-    )
-    
-    # Add all options as a field
-    options_text = "\n".join([f"• {option}" for option in option_list])
-    embed.add_field(
-        name=f"📋 Available Options ({len(option_list)})",
-        value=options_text,
-        inline=False
-    )
-    
-    embed.set_footer(text="Random Choice Generator •  😈The Devil's Spot😈")
-    
-    await interaction.response.send_message(embed=embed)
-
 
 @tree.command(name="unassigned_events", description="List events without a judge assigned (Judges/Organizers)")
 async def unassigned_events(interaction: discord.Interaction):
@@ -2939,12 +2848,109 @@ async def add_captain(interaction: discord.Interaction, round: str, captain1: di
             print(f"Warning: Could not send logo, sending embed without logo: {e}")
             await channel.send(embed=rules_embed)
         
-        # Ping helper team
-        await channel.send("<@&1175619471671566406> - New match channel setup complete!")
         
     except Exception as e:
         await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
         print(f"Error in add_captain command: {e}")
+
+
+@tree.command(name="maps", description="Randomly select 3, 5, or 7 maps for gameplay")
+@app_commands.describe(
+    count="Number of maps to select (3, 5, or 7)"
+)
+async def maps(interaction: discord.Interaction, count: int):
+    """Randomly selects 3, 5, or 7 maps from the available map pool"""
+    
+    import random
+    
+    # Predefined map list
+    maps_list = [
+        "New Storm (2024)",
+        "Arid Frontier", 
+        "Islands of Iceland",
+        "Unexplored Rocks",
+        "Arctic",
+        "Lost City",
+        "Polar Frontier",
+        "Hidden Dragon",
+        "Monstrous Maelstrom",
+        "Two Samurai",
+        "Stone Peaks",
+        "Viking Bay",
+        "Greenlands",
+        "Old Storm"
+    ]
+    
+    # Validate count
+    if count not in [3, 5, 7]:
+        await interaction.response.send_message("❌ Please select 3, 5, or 7 maps only.", ephemeral=True)
+        return
+    
+    # Randomly select the specified number of maps
+    selected_maps = random.sample(maps_list, count)
+    
+    embed = discord.Embed(
+        title=f"🗺️ Random Map Selection {ORGANIZATION_NAME}",
+        description=f"**Randomly selected {count} map(s):**",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    
+    # Add selected maps as a field
+    selected_maps_text = "\n".join([f"• {map_name}" for map_name in selected_maps])
+    embed.add_field(
+        name=f"🎯 Selected Maps ({count})",
+        value=selected_maps_text,
+        inline=False
+    )
+    
+    embed.set_footer(text=f"Powered by • {ORGANIZATION_NAME}")
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="choose", description="Randomly choose from a list of options")
+@app_commands.describe(
+    options="List of options separated by commas"
+)
+async def choose(interaction: discord.Interaction, options: str):
+    """Randomly selects one option from a comma-separated list"""
+    
+    import random
+    
+    # Handle comma-separated options (original functionality)
+    option_list = [option.strip() for option in options.split(',') if option.strip()]
+    
+    # Validate input
+    if len(option_list) < 2:
+        await interaction.response.send_message("❌ Please provide at least 2 options separated by commas.", ephemeral=True)
+        return
+    
+    if len(option_list) > 20:
+        await interaction.response.send_message("❌ Too many options! Please provide 20 or fewer options.", ephemeral=True)
+        return
+    
+    # Randomly select one option
+    chosen_option = random.choice(option_list)
+    
+    # Create embed
+    embed = discord.Embed(
+        title="🎲 Random Choice",
+        description=f"**Selected:** {chosen_option}",
+        color=discord.Color.gold(),
+        timestamp=discord.utils.utcnow()
+    )
+    
+    # Add all options as a field
+    options_text = "\n".join([f"• {option}" for option in option_list])
+    embed.add_field(
+        name=f"📋 Available Options ({len(option_list)})",
+        value=options_text,
+        inline=False
+    )
+    
+    embed.set_footer(text=f"Powered by • {ORGANIZATION_NAME}")
+    
+    await interaction.response.send_message(embed=embed)
 
 
 if __name__ == "__main__":
