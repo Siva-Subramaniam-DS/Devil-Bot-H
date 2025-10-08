@@ -2787,6 +2787,22 @@ async def add_captain(interaction: discord.Interaction, round: str, captain1: di
             await interaction.response.send_message(f"❌ Failed to rename channel: {e}", ephemeral=True)
             return
         
+        # Add both captains to the channel
+        try:
+            # Add captain 1 to the channel
+            await channel.set_permissions(captain1, 
+                                         view_channel=True,
+                                         send_messages=True)
+            
+            # Add captain 2 to the channel
+            await channel.set_permissions(captain2, 
+                                         view_channel=True,
+                                         send_messages=True)
+        except discord.Forbidden:
+            await interaction.followup.send("⚠️ Channel renamed but couldn't add captains - missing permissions.", ephemeral=True)
+        except discord.HTTPException as e:
+            await interaction.followup.send(f"⚠️ Channel renamed but error adding captains: {e}", ephemeral=True)
+        
         # Send tournament rules message
         rules_embed = discord.Embed(
             title="🏆 Tournament Match Setup",
