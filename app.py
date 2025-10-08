@@ -2885,12 +2885,23 @@ async def add_captain(interaction: discord.Interaction, round: str, captain1: di
             color=0x00ff00
         )
         
+        # Add logo as thumbnail (top right)
+        try:
+            with open("a_cbe9bf71e82c25bd6a6ce7ff0b7fc343.gif", "rb") as logo_file:
+                logo_data = io.BytesIO(logo_file.read())
+                logo_file = discord.File(logo_data, filename="logo.gif")
+                rules_embed.set_thumbnail(url="attachment://logo.gif")
+        except FileNotFoundError:
+            print("Warning: a_cbe9bf71e82c25bd6a6ce7ff0b7fc343.gif not found, skipping logo")
+        except Exception as e:
+            print(f"Warning: Could not load logo: {e}")
+        
         rules_embed.add_field(
             name="📋 Tournament Information",
             value=(
-                "• Refer to [🏆 | BRACKET](https://discord.com/channels/1038883381745827931/1175583664290144306) for match schedules and pairings.\n"
-                "• Refer to [📣 | EVENT-ANNOUNCEMENT](https://discord.com/channels/1038883381745827931/1175583555888361472) for official updates.\n"
-                "• Refer to [📄 | TOURNAMENT-RULES](https://discord.com/channels/1038883381745827931/1175583783962021998) for tournament guidelines and regulations."
+                "• Refer to https://discord.com/channels/1038883381745827931/1175583664290144306 for match schedules and pairings.\n"
+                "• Refer to https://discord.com/channels/1038883381745827931/1175583555888361472 for official updates.\n"
+                "• Refer to https://discord.com/channels/1038883381745827931/1175583783962021998 for tournament guidelines and regulations."
             ),
             inline=False
         )
@@ -2913,10 +2924,20 @@ async def add_captain(interaction: discord.Interaction, round: str, captain1: di
             inline=False
         )
         
-        rules_embed.set_footer(text=f"powered by naval warfare academy | {interaction.user.display_name} ✰—• • {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}")
+        rules_embed.set_footer(text=f"[Organization Name] | {interaction.user.name} ✰—• • {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}")
         
-        # Send the rules message
-        await channel.send(embed=rules_embed)
+        # Send the rules message with logo
+        try:
+            with open("a_cbe9bf71e82c25bd6a6ce7ff0b7fc343.gif", "rb") as logo_file:
+                logo_data = io.BytesIO(logo_file.read())
+                logo_file = discord.File(logo_data, filename="logo.gif")
+                await channel.send(embed=rules_embed, file=logo_file)
+        except FileNotFoundError:
+            print("Warning: a_cbe9bf71e82c25bd6a6ce7ff0b7fc343.gif not found, sending embed without logo")
+            await channel.send(embed=rules_embed)
+        except Exception as e:
+            print(f"Warning: Could not send logo, sending embed without logo: {e}")
+            await channel.send(embed=rules_embed)
         
         # Ping helper team
         await channel.send("<@&1175619471671566406> - New match channel setup complete!")
