@@ -983,61 +983,13 @@ async def schedule_event_cleanup(event_id: str, delay_hours: int = 36):
         print(f"Error scheduling cleanup for event {event_id}: {e}")
 
 # Google Fonts API Integration
-def download_google_font(font_family: str, font_style: str = "regular", font_weight: str = "400") -> str:
-    """Download a font from Google Fonts API and return the local file path"""
-    try:
-        # Google Fonts API URL
-        api_url = f"https://fonts.googleapis.com/css2?family={font_family.replace(' ', '+')}:wght@{font_weight}"
-        
-        # Add style parameter if not regular
-        if font_style != "regular":
-            api_url += f"&style={font_style}"
-        
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
-        response = requests.get(api_url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        # Parse CSS to get font URL
-        css_content = response.text
-        font_urls = re.findall(r'url\((https://[^)]+\.woff2?)\)', css_content)
-        
-        if not font_urls:
-            print(f"No font URLs found in CSS for {font_family}")
-            return None
-        
-        # Download the first font file (usually woff2)
-        font_url = font_urls[0]
-        font_response = requests.get(font_url, timeout=15)
-        font_response.raise_for_status()
-        
-        # Create temporary file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.woff2')
-        temp_file.write(font_response.content)
-        temp_file.close()
-        
-        print(f"Downloaded Google Font: {font_family} -> {temp_file.name}")
-        return temp_file.name
-        
-    except Exception as e:
-        print(f"Error downloading Google Font {font_family}: {e}")
-        return None
+# Google Fonts download function removed - using only local fonts to prevent hanging
 
 def get_font_with_fallbacks(font_name: str, size: int, font_style: str = "regular") -> ImageFont.FreeTypeFont:
-    """Get a font with multiple fallback options including Google Fonts"""
+    """Get a font using only local fonts to avoid network issues"""
     font_candidates = []
     
-    # 1. Try Google Fonts first
-    try:
-        google_font_path = download_google_font(font_name, font_style)
-        if google_font_path:
-            font_candidates.append(google_font_path)
-    except Exception as e:
-        print(f"Google Fonts failed for {font_name}: {e}")
-    
-    # 2. Try local bundled fonts
+    # Use only local bundled fonts - no Google Fonts to prevent hanging
     local_fonts = [
         str(Path("Fonts") / "capture_it" / "Capture it.ttf"),
         str(Path("Fonts") / "ds_digital" / "DS-DIGIB.TTF"),
@@ -1156,15 +1108,14 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
             time_size = int(height * 0.07)
             tiny_size = int(height * 0.05)
             
-            # Load fonts with Google Fonts fallback
+            # Load fonts using only local fonts (no Google Fonts to prevent hanging)
             try:
-                # Try Google Fonts first, then fallback to local/system fonts
-                font_title = get_font_with_fallbacks("Orbitron", title_size, "bold")  # Modern display font
-                font_round = get_font_with_fallbacks("Orbitron", round_size, "bold")  # Same for round
-                # Use a unique bundled font for player names so styling is consistent regardless of Discord nickname styling
-                font_vs = get_font_with_fallbacks("Capture it", vs_size, "bold")       # Unique display font from Fonts/capture_it
-                font_time = get_font_with_fallbacks("Share Tech Mono", time_size)     # Monospace for time
-                font_tiny = get_font_with_fallbacks("Roboto", tiny_size)              # Small text
+                # Use your local fonts directly
+                font_title = get_font_with_fallbacks("DS-DIGIB", title_size, "bold")     # Bold digital font for titles
+                font_round = get_font_with_fallbacks("DS-DIGIB", round_size, "bold")     # Same for round
+                font_vs = get_font_with_fallbacks("Capture it", vs_size, "bold")         # Unique display font from Fonts/capture_it
+                font_time = get_font_with_fallbacks("DS-DIGI", time_size)                # Monospace digital font for time
+                font_tiny = get_font_with_fallbacks("DS-DIGIT", tiny_size)               # Small digital text
                 
                 print("Fonts loaded successfully")
                 
@@ -1821,26 +1772,53 @@ async def event_create(
     save_scheduled_events()
     print(f"💾 Event {event_id} saved to file")
     
-    # Get random template image and create poster
+    # Get random template image and create poster (with timeout to prevent hanging)
+    # Set to False to disable poster generation entirely if needed
+    ENABLE_POSTER_GENERATION = True
+    
     template_image = get_random_template()
     poster_image = None
     
-    if template_image:
+    if template_image and ENABLE_POSTER_GENERATION:
         try:
-            # Create poster with text overlays
-            poster_image = create_event_poster(
-                template_image, 
-                round_label, 
-                team_1_captain.name, 
-                team_2_captain.name, 
-                time_info['utc_time_simple'],
-                f"{date:02d}/{month:02d}/{current_year}",
-                tournament
-            )
-            if poster_image:
-                # Keep poster path for later cleanup/deletion
-                scheduled_events[event_id]['poster_path'] = poster_image
-                save_scheduled_events()
+            import asyncio
+            import concurrent.futures
+            
+            # Create poster with timeout to prevent hanging
+            def create_poster_sync():
+                return create_event_poster(
+                    template_image, 
+                    round_label, 
+                    team_1_captain.name, 
+                    team_2_captain.name, 
+                    time_info['utc_time_simple'],
+                    f"{date:02d}/{month:02d}/{current_year}",
+                    tournament
+                )
+            
+            # Use asyncio to add timeout to poster creation
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(create_poster_sync)
+                try:
+                    # Wait maximum 5 seconds for poster creation (should be much faster with local fonts)
+                    poster_image = await asyncio.wait_for(
+                        loop.run_in_executor(None, lambda: future.result()), 
+                        timeout=5.0
+                    )
+                    if poster_image:
+                        # Keep poster path for later cleanup/deletion
+                        scheduled_events[event_id]['poster_path'] = poster_image
+                        save_scheduled_events()
+                        print(f"✅ Poster created successfully for event {event_id}")
+                    else:
+                        print(f"⚠️ Poster creation returned None for event {event_id}")
+                except asyncio.TimeoutError:
+                    print(f"⏰ Poster creation timed out for event {event_id} - continuing without poster")
+                    poster_image = None
+                    # Cancel the future
+                    future.cancel()
+                    
         except Exception as e:
             print(f"Error creating poster: {e}")
             poster_image = None
