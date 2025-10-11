@@ -1193,8 +1193,8 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
             
             # Load fonts with Google Fonts fallback
             try:
-                # Use ds_digital font for server name, round, date, and time
-                font_title = get_font_with_fallbacks("DS-Digital", title_size, "bold")  # Server name
+                # Use Square One font for server name, DS-Digital for round, date, and time
+                font_title = get_font_with_fallbacks("Square One", title_size, "bold")  # Server name
                 font_round = get_font_with_fallbacks("DS-Digital", round_size, "bold")  # Round text
                 # Use a unique bundled font for player names so styling is consistent regardless of Discord nickname styling
                 font_vs = get_font_with_fallbacks("Capture it", vs_size, "bold")       # Unique display font from Fonts/capture_it
@@ -2089,7 +2089,7 @@ async def event_result(
     
     # Staff Section
     staff_text = f"👨‍⚖️ **Staffs**\n"
-    staff_text += f"▪ Judge: {interaction.user.mention} `@{interaction.user.name}`"
+    staff_text += f"▪ Judge: {interaction.user.mention}"
     embed.add_field(name="", value=staff_text, inline=False)
     
     # Add spacing
