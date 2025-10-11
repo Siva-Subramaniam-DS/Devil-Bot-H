@@ -1007,13 +1007,23 @@ def get_font_with_fallbacks(font_name: str, size: int, font_style: str = "regula
     font_candidates = []
     
     # 1. Try your local fonts FIRST (from Fonts/ folder)
-    local_fonts = [
-        str(Path("Fonts") / "capture_it" / "Capture it.ttf"),
-        str(Path("Fonts") / "ds_digital" / "DS-DIGIB.TTF"),
-        str(Path("Fonts") / "ds_digital" / "DS-DIGII.TTF"),
-        str(Path("Fonts") / "ds_digital" / "DS-DIGI.TTF"),
-        str(Path("Fonts") / "ds_digital" / "DS-DIGIT.TTF"),
-    ]
+    if font_name == "DS-Digital":
+        # Prioritize DS-Digital fonts when specifically requested
+        local_fonts = [
+            str(Path("Fonts") / "ds_digital" / "DS-DIGIB.TTF"),
+            str(Path("Fonts") / "ds_digital" / "DS-DIGII.TTF"),
+            str(Path("Fonts") / "ds_digital" / "DS-DIGI.TTF"),
+            str(Path("Fonts") / "ds_digital" / "DS-DIGIT.TTF"),
+        ]
+    else:
+        # Default local fonts for other font requests
+        local_fonts = [
+            str(Path("Fonts") / "capture_it" / "Capture it.ttf"),
+            str(Path("Fonts") / "ds_digital" / "DS-DIGIB.TTF"),
+            str(Path("Fonts") / "ds_digital" / "DS-DIGII.TTF"),
+            str(Path("Fonts") / "ds_digital" / "DS-DIGI.TTF"),
+            str(Path("Fonts") / "ds_digital" / "DS-DIGIT.TTF"),
+        ]
     font_candidates.extend(local_fonts)
     
     # 2. Try Google Fonts as fallback (only if local fonts fail)
@@ -1087,7 +1097,7 @@ def get_random_template():
             return random.choice(image_files)
     return None
 
-def create_event_poster(template_path: str, round_label: str, team1_captain: str, team2_captain: str, utc_time: str, date_str: str = None, tournament_name: str = "King of the Seas", server_name: str = ORGANIZATION_NAME) -> str:
+def create_event_poster(template_path: str, round_label: str, team1_captain: str, team2_captain: str, utc_time: str, date_str: str = None, server_name: str = "The Devil's Spot") -> str:
     """Create event poster with text overlays using Google Fonts and improved error handling"""
     print(f"Creating poster with template: {template_path}")
     
@@ -1136,12 +1146,12 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
             
             # Load fonts with Google Fonts fallback
             try:
-                # Try Google Fonts first, then fallback to local/system fonts
-                font_title = get_font_with_fallbacks("Orbitron", title_size, "bold")  # Modern display font
-                font_round = get_font_with_fallbacks("Orbitron", round_size, "bold")  # Same for round
+                # Use ds_digital font for server name, round, date, and time
+                font_title = get_font_with_fallbacks("DS-Digital", title_size, "bold")  # Server name
+                font_round = get_font_with_fallbacks("DS-Digital", round_size, "bold")  # Round text
                 # Use a unique bundled font for player names so styling is consistent regardless of Discord nickname styling
                 font_vs = get_font_with_fallbacks("Capture it", vs_size, "bold")       # Unique display font from Fonts/capture_it
-                font_time = get_font_with_fallbacks("Share Tech Mono", time_size)     # Monospace for time
+                font_time = get_font_with_fallbacks("DS-Digital", time_size, "bold")  # Date and time
                 font_tiny = get_font_with_fallbacks("Roboto", tiny_size)              # Small text
                 
                 print("Fonts loaded successfully")
@@ -1812,8 +1822,7 @@ async def event_create(
                 team_1_captain.name, 
                 team_2_captain.name, 
                 time_info['utc_time_simple'],
-                f"{date:02d}/{month:02d}/{current_year}",
-                tournament
+                f"{date:02d}/{month:02d}/{current_year}"
             )
             if poster_image:
                 # Keep poster path for later cleanup/deletion
