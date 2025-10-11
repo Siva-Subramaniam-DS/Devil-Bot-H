@@ -1815,8 +1815,11 @@ async def event_create(
         'team2_captain': team_2_captain
     }
     
+    print(f"📝 Event {event_id} created internally for {team_1_captain.display_name} vs {team_2_captain.display_name}")
+    
     # Save events to file
     save_scheduled_events()
+    print(f"💾 Event {event_id} saved to file")
     
     # Get random template image and create poster
     template_image = get_random_template()
@@ -1893,31 +1896,59 @@ async def event_create(
     # Create Take Schedule button
     take_schedule_view = TakeScheduleButton(event_id, team_1_captain, team_2_captain, interaction.channel)
     
-    # Send confirmation to user
-    await interaction.followup.send("✅ Event created and posted to both channels! Reminder will ping captains 10 minutes before start.", ephemeral=True)
-    
     # Post in Take-Schedule channel (with button)
+    posted_to_schedule = False
     try:
         schedule_channel = interaction.guild.get_channel(CHANNEL_IDS["take_schedule"])
         if schedule_channel:
-            judge_ping = f"<@&{ROLE_IDS['judge']}>"
-            if poster_image:
-                with open(poster_image, 'rb') as f:
-                    file = discord.File(f, filename="event_poster.png")
-                    schedule_message = await schedule_channel.send(content=judge_ping, embed=embed, file=file, view=take_schedule_view)
-            else:
-                schedule_message = await schedule_channel.send(content=judge_ping, embed=embed, view=take_schedule_view)
+            print(f"📍 Posting event {event_id} to Take-Schedule channel...")
+            print(f"   Channel: {schedule_channel.name} (ID: {schedule_channel.id})")
             
-            # Store the message ID for later deletion
-            scheduled_events[event_id]['schedule_message_id'] = schedule_message.id
-            scheduled_events[event_id]['schedule_channel_id'] = schedule_channel.id
+            # Check bot permissions
+            perms = schedule_channel.permissions_for(interaction.guild.me)
+            print(f"   Permissions - Send: {perms.send_messages}, Embed: {perms.embed_links}, Attach: {perms.attach_files}")
+            
+            if not perms.send_messages:
+                error_msg = "❌ Bot lacks 'Send Messages' permission in Take-Schedule channel!"
+                print(error_msg)
+                await interaction.followup.send(f"⚠️ {error_msg}", ephemeral=True)
+            elif not perms.embed_links:
+                error_msg = "❌ Bot lacks 'Embed Links' permission in Take-Schedule channel!"
+                print(error_msg)
+                await interaction.followup.send(f"⚠️ {error_msg}", ephemeral=True)
+            else:
+                judge_ping = f"<@&{ROLE_IDS['judge']}>"
+                if poster_image:
+                    with open(poster_image, 'rb') as f:
+                        file = discord.File(f, filename="event_poster.png")
+                        schedule_message = await schedule_channel.send(content=judge_ping, embed=embed, file=file, view=take_schedule_view)
+                else:
+                    schedule_message = await schedule_channel.send(content=judge_ping, embed=embed, view=take_schedule_view)
+                
+                # Store the message ID for later deletion
+                scheduled_events[event_id]['schedule_message_id'] = schedule_message.id
+                scheduled_events[event_id]['schedule_channel_id'] = schedule_channel.id
+                save_scheduled_events()
+                posted_to_schedule = True
+                print(f"✅ Event {event_id} posted to Take-Schedule channel (Message ID: {schedule_message.id})")
         else:
-            await interaction.followup.send("⚠️ Could not find Take-Schedule channel.", ephemeral=True)
+            error_msg = f"❌ Take-Schedule channel (ID: {CHANNEL_IDS['take_schedule']}) not found! Channel may be deleted or ID is wrong."
+            print(error_msg)
+            await interaction.followup.send(f"⚠️ {error_msg}\nPlease check CHANNEL_IDS in code.", ephemeral=True)
+    except discord.Forbidden as e:
+        error_msg = f"❌ Permission denied posting to Take-Schedule channel: {e}"
+        print(error_msg)
+        await interaction.followup.send(f"⚠️ Bot lacks permissions to post in Take-Schedule channel. Please check channel permissions.", ephemeral=True)
     except Exception as e:
+        error_msg = f"❌ Error posting to Take-Schedule channel: {type(e).__name__}: {e}"
+        print(error_msg)
+        import traceback
+        traceback.print_exc()
         await interaction.followup.send(f"⚠️ Could not post in Take-Schedule channel: {e}", ephemeral=True)
     
     # Post in the channel where command was used (without button)
     try:
+        print(f"📍 Posting event {event_id} to current channel ({interaction.channel.name})...")
         if poster_image:
             with open(poster_image, 'rb') as f:
                 file = discord.File(f, filename="event_poster.png")
@@ -1925,11 +1956,22 @@ async def event_create(
         else:
             await interaction.channel.send(embed=embed)
 
+        print(f"✅ Event {event_id} posted to current channel")
+        
         # Schedule the 10-minute reminder
+        print(f"⏰ Scheduling 10-minute reminder for event {event_id}...")
         await schedule_ten_minute_reminder(event_id, team_1_captain, team_2_captain, None, interaction.channel, event_datetime)
+        print(f"✅ Reminder scheduled for event {event_id}")
         
     except Exception as e:
+        print(f"❌ Error posting to current channel: {e}")
         await interaction.followup.send(f"⚠️ Could not post in current channel: {e}", ephemeral=True)
+    
+    # Send final status summary
+    if posted_to_schedule:
+        await interaction.followup.send("✅ Event created successfully and posted to both channels! Reminder will ping captains 10 minutes before start.", ephemeral=True)
+    else:
+        await interaction.followup.send("⚠️ Event created but could NOT post to Take-Schedule channel. Posted to current channel only. Please check channel permissions!", ephemeral=True)
 
 @tree.command(name="event-result", description="Add event results (Head Organizer/Judge only)")
 @app_commands.describe(
@@ -3032,6 +3074,64 @@ async def maps(interaction: discord.Interaction, count: int):
     
     embed.set_footer(text=f"Powered by • {ORGANIZATION_NAME}")
     await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="test_channels", description="Test if bot can access configured channels (Organizer only)")
+async def test_channels(interaction: discord.Interaction):
+    """Test channel access for debugging"""
+    
+    # Check permissions
+    user_roles = [role.id for role in interaction.user.roles]
+    is_owner = interaction.user.id == BOT_OWNER_ID
+    is_organizer = ROLE_IDS["head_organizer"] in user_roles
+    
+    if not (is_owner or is_organizer):
+        await interaction.response.send_message(
+            "❌ You need to be **Bot Owner** or **Head Organizer** to use this command.",
+            ephemeral=True
+        )
+        return
+    
+    embed = discord.Embed(
+        title="🔍 Channel Access Test",
+        description="Testing bot access to configured channels...",
+        color=discord.Color.blue(),
+        timestamp=discord.utils.utcnow()
+    )
+    
+    # Test each channel
+    for channel_name, channel_id in CHANNEL_IDS.items():
+        channel = interaction.guild.get_channel(channel_id)
+        
+        if channel:
+            # Check if bot can send messages
+            perms = channel.permissions_for(interaction.guild.me)
+            can_send = perms.send_messages
+            can_embed = perms.embed_links
+            can_attach = perms.attach_files
+            can_mention = perms.mention_everyone
+            
+            status = "✅" if (can_send and can_embed) else "⚠️"
+            details = f"Channel: {channel.mention}\n"
+            details += f"• Send Messages: {'✅' if can_send else '❌'}\n"
+            details += f"• Embed Links: {'✅' if can_embed else '❌'}\n"
+            details += f"• Attach Files: {'✅' if can_attach else '❌'}\n"
+            details += f"• Mention Everyone: {'✅' if can_mention else '❌'}"
+            
+            embed.add_field(
+                name=f"{status} {channel_name.replace('_', ' ').title()}",
+                value=details,
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name=f"❌ {channel_name.replace('_', ' ').title()}",
+                value=f"Channel ID `{channel_id}` not found!\nThe channel may have been deleted or the ID is wrong.",
+                inline=False
+            )
+    
+    embed.set_footer(text=f"{ORGANIZATION_NAME}")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @tree.command(name="choose", description="Randomly choose from a list of options")
