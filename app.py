@@ -27,7 +27,8 @@ load_dotenv()
 CHANNEL_IDS = {
     "take_schedule": 1272263927736045618,
     "results": 1175587317558288484,
-    "transcript": 1175720148259324017
+    "transcript": 1175720148259324017,
+    "staff_attendance": 1197214718713155595
 }
 
 # Bot Owner ID for special permissions
@@ -483,6 +484,52 @@ def remove_judge_field(embed: discord.Embed) -> bool:
         return remove_field_by_name(embed, "👨‍⚖️ Judge")
     except Exception as e:
         print(f"Error removing judge field: {e}")
+        return False
+
+def add_green_circle_to_title(title: str) -> str:
+    """Add green circle emoji to the beginning of title if not already present"""
+    green_circle = "🟢"
+    
+    # Check if already has green circle
+    if title and title.startswith(green_circle):
+        return title
+    
+    # Add green circle to beginning
+    return green_circle + (title or "")
+
+def update_embed_title_with_green_circle(embed: discord.Embed) -> bool:
+    """Update embed title with green circle, returns success status"""
+    try:
+        if embed.title:
+            new_title = add_green_circle_to_title(embed.title)
+            embed.title = new_title
+            return True
+        return False
+    except Exception as e:
+        print(f"Error updating embed title with green circle: {e}")
+        return False
+
+def replace_green_circle_with_checkmark(title: str) -> str:
+    """Replace green circle emoji with checkmark emoji in title"""
+    green_circle = "🟢"
+    checkmark = "✅"
+    
+    if title and title.startswith(green_circle):
+        return checkmark + title[len(green_circle):]
+    
+    # If no green circle, just add checkmark at the beginning
+    return checkmark + (title or "")
+
+def update_embed_title_with_checkmark(embed: discord.Embed) -> bool:
+    """Update embed title with checkmark, returns success status"""
+    try:
+        if embed.title:
+            new_title = replace_green_circle_with_checkmark(embed.title)
+            embed.title = new_title
+            return True
+        return False
+    except Exception as e:
+        print(f"Error updating embed title with checkmark: {e}")
         return False
 
 def can_judge_take_schedule(judge_id: int, max_assignments: int = 3) -> tuple[bool, str]:
@@ -2133,6 +2180,28 @@ async def event_result(
 
     # Winner-only summary removed per request
     
+    # Post staff attendance in Staff Attendance channel
+    try:
+        staff_attendance_channel = interaction.guild.get_channel(CHANNEL_IDS["staff_attendance"])
+        if staff_attendance_channel:
+            # Create staff attendance message
+            attendance_text = f"🏅 {winner.display_name} Vs {loser.display_name}\n"
+            attendance_text += f"**Round :** {round}\n"
+            
+            # Add group if specified
+            if group_label:
+                attendance_text += f"**Group :** {group_label}\n"
+            
+            attendance_text += f"\n**Results**\n"
+            attendance_text += f"🏆 {winner.display_name} ({winner_score}) Vs ({loser_score}) {loser.display_name} 💀\n\n"
+            attendance_text += f"**Staffs**\n"
+            attendance_text += f"• Judge: {interaction.user.mention} `@{interaction.user.name}`"
+            
+            await staff_attendance_channel.send(attendance_text)
+        else:
+            print("⚠️ Could not find Staff Attendance channel.")
+    except Exception as e:
+        print(f"⚠️ Could not post in Staff Attendance channel: {e}")
 
     # Schedule auto-cleanup of matching events in this channel after 36 hours
     try:
@@ -2146,13 +2215,86 @@ async def event_result(
                     t2 = getattr(data.get('team2_captain'), 'id', None)
                     if winner.id in (t1, t2) and loser.id in (t1, t2):
                         matching_event_ids.append(ev_id)
-                except Exception:
+                        
+                        # Update the event with result data
+                        scheduled_events[ev_id]['result_added'] = True
+                        scheduled_events[ev_id]['result_winner'] = winner
+                        scheduled_events[ev_id]['result_loser'] = loser
+                        scheduled_events[ev_id]['result_winner_score'] = winner_score
+                        scheduled_events[ev_id]['result_loser_score'] = loser_score
+                        scheduled_events[ev_id]['result_judge'] = interaction.user
+                        scheduled_events[ev_id]['result_group'] = group_label
+                        scheduled_events[ev_id]['result_remarks'] = remarks
+                        
+                        print(f"Updated event {ev_id} with result data")
+                except Exception as e:
+                    print(f"Error updating event {ev_id}: {e}")
                     matching_event_ids.append(ev_id)
+
+        # Save updated events
+        if matching_event_ids:
+            save_scheduled_events()
 
         scheduled_any = False
         for ev_id in matching_event_ids:
+            # Update the original schedule message title with checkmark
+            try:
+                event_data = scheduled_events.get(ev_id)
+                if event_data:
+                    schedule_channel_id = event_data.get('schedule_channel_id')
+                    schedule_message_id = event_data.get('schedule_message_id')
+                    
+                    if schedule_channel_id and schedule_message_id:
+                        schedule_channel = interaction.guild.get_channel(schedule_channel_id)
+                        if schedule_channel:
+                            try:
+                                schedule_message = await schedule_channel.fetch_message(schedule_message_id)
+                                if schedule_message.embeds:
+                                    embed = schedule_message.embeds[0]
+                                    # Update title with checkmark
+                                    if update_embed_title_with_checkmark(embed):
+                                        try:
+                                            await schedule_message.edit(embed=embed)
+                                            print(f"Updated schedule title with checkmark for event {ev_id}")
+                                        except discord.Forbidden:
+                                            print(f"Bot doesn't have permission to edit message in channel {schedule_channel.name}")
+                                        except Exception as edit_error:
+                                            print(f"Error editing schedule message for event {ev_id}: {edit_error}")
+                            except discord.NotFound:
+                                print(f"Schedule message not found for event {ev_id}")
+                            except Exception as e:
+                                print(f"Error updating schedule title for event {ev_id}: {e}")
+            except Exception as e:
+                print(f"Error processing title update for event {ev_id}: {e}")
+            
             await schedule_event_cleanup(ev_id, delay_hours=36)
             scheduled_any = True
+        
+        # Also update any schedule messages in the current channel
+        try:
+            current_channel = interaction.channel
+            if current_channel:
+                # Look for recent messages in current channel that might be schedule messages
+                async for message in current_channel.history(limit=50):
+                    if message.embeds and message.author == bot.user:
+                        embed = message.embeds[0]
+                        # Check if this looks like a schedule message with green circle
+                        if embed.title and embed.title.startswith("🟢"):
+                            # Check if this matches our winner/loser
+                            description = embed.description or ""
+                            if (winner.display_name in description and loser.display_name in description) or \
+                               (winner.mention in description and loser.mention in description):
+                                if update_embed_title_with_checkmark(embed):
+                                    try:
+                                        await message.edit(embed=embed)
+                                        print(f"Updated current channel schedule title with checkmark")
+                                    except discord.Forbidden:
+                                        print(f"Bot doesn't have permission to edit message in current channel")
+                                    except Exception as edit_error:
+                                        print(f"Error editing current channel message: {edit_error}")
+                                break
+        except Exception as e:
+            print(f"Error updating current channel schedule title: {e}")
 
         if scheduled_any:
             await interaction.followup.send("🧹 Auto-cleanup scheduled: Related event(s) will be removed after 36 hours.", ephemeral=True)
