@@ -2913,7 +2913,7 @@ async def add_captain(interaction: discord.Interaction, round: str, captain1: di
         
         rules_embed.add_field(
             name="🆘 Need Help?",
-            value="If you require any assistance, please ping <@&1242280627991220275> and they will be happy to assist.",
+            value="If you require any assistance, please ping <@&1175619471671566406> and they will be happy to assist.",
             inline=False
         )
         
