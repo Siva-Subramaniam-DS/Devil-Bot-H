@@ -991,20 +991,69 @@ async def schedule_event_cleanup(event_id: str, delay_hours: int = 36):
         print(f"Error scheduling cleanup for event {event_id}: {e}")
 
 # Google Fonts API Integration
-# Google Fonts download function removed - using only local fonts to prevent hanging
+def download_google_font(font_family: str, font_style: str = "regular", font_weight: str = "400") -> str:
+    """Download a font from Google Fonts API and return the local file path"""
+    try:
+        # Google Fonts API URL
+        api_url = f"https://fonts.googleapis.com/css2?family={font_family.replace(' ', '+')}:wght@{font_weight}"
+        
+        # Add style parameter if not regular
+        if font_style != "regular":
+            api_url += f"&style={font_style}"
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(api_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        # Parse CSS to get font URL
+        css_content = response.text
+        font_urls = re.findall(r'url\((https://[^)]+\.woff2?)\)', css_content)
+        
+        if not font_urls:
+            print(f"No font URLs found in CSS for {font_family}")
+            return None
+        
+        # Download the first font file (usually woff2)
+        font_url = font_urls[0]
+        font_response = requests.get(font_url, timeout=15)
+        font_response.raise_for_status()
+        
+        # Create temporary file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.woff2')
+        temp_file.write(font_response.content)
+        temp_file.close()
+        
+        print(f"Downloaded Google Font: {font_family} -> {temp_file.name}")
+        return temp_file.name
+        
+    except Exception as e:
+        print(f"Error downloading Google Font {font_family}: {e}")
+        return None
 
 def get_font_with_fallbacks(font_name: str, size: int, font_style: str = "regular") -> ImageFont.FreeTypeFont:
-    """Get a font using only local fonts to avoid network issues"""
+    """Get a font using your local fonts first, then Google Fonts as fallback"""
     font_candidates = []
     
-    # Use only local bundled fonts - no Google Fonts to prevent hanging
+    # 1. Try your local fonts FIRST (from Fonts/ folder)
     local_fonts = [
         str(Path("Fonts") / "capture_it" / "Capture it.ttf"),
         str(Path("Fonts") / "ds_digital" / "DS-DIGIB.TTF"),
         str(Path("Fonts") / "ds_digital" / "DS-DIGII.TTF"),
         str(Path("Fonts") / "ds_digital" / "DS-DIGI.TTF"),
+        str(Path("Fonts") / "ds_digital" / "DS-DIGIT.TTF"),
     ]
     font_candidates.extend(local_fonts)
+    
+    # 2. Try Google Fonts as fallback (only if local fonts fail)
+    try:
+        google_font_path = download_google_font(font_name, font_style)
+        if google_font_path:
+            font_candidates.append(google_font_path)
+    except Exception as e:
+        print(f"Google Fonts failed for {font_name}: {e}")
     
     # 3. Try system fonts
     system_fonts = [
@@ -1116,9 +1165,9 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
             time_size = int(height * 0.07)
             tiny_size = int(height * 0.05)
             
-            # Load fonts using only local fonts (no Google Fonts to prevent hanging)
+            # Load fonts using your local fonts from Fonts/ folder
             try:
-                # Use your local fonts directly
+                # Use your local fonts directly - no Google Fonts needed
                 font_title = get_font_with_fallbacks("DS-DIGIB", title_size, "bold")     # Bold digital font for titles
                 font_round = get_font_with_fallbacks("DS-DIGIB", round_size, "bold")     # Same for round
                 font_vs = get_font_with_fallbacks("Capture it", vs_size, "bold")         # Unique display font from Fonts/capture_it
@@ -1780,16 +1829,13 @@ async def event_create(
     save_scheduled_events()
     print(f"💾 Event {event_id} saved to file")
     
-    # Get random template image and create poster (with timeout to prevent hanging)
-    # Set to False to disable poster generation entirely if needed
-    ENABLE_POSTER_GENERATION = True
-    
+    # Get random template image and create poster (exact same as Sample Bot)
     template_image = get_random_template()
     poster_image = None
     
-    if template_image and ENABLE_POSTER_GENERATION:
+    if template_image:
         try:
-            # Create poster with text overlays (using local fonts only)
+            # Create poster with text overlays (exact same as Sample Bot)
             poster_image = create_event_poster(
                 template_image, 
                 round_label, 
@@ -1803,9 +1849,6 @@ async def event_create(
                 # Keep poster path for later cleanup/deletion
                 scheduled_events[event_id]['poster_path'] = poster_image
                 save_scheduled_events()
-                print(f"✅ Poster created successfully for event {event_id}")
-            else:
-                print(f"⚠️ Poster creation returned None for event {event_id}")
         except Exception as e:
             print(f"Error creating poster: {e}")
             poster_image = None
@@ -1909,7 +1952,7 @@ async def event_create(
         print(error_msg)
         import traceback
         traceback.print_exc()
-        await interaction.followup.send(f"⚠️ Could not post in Take-Schedule channel: {e}", ephemeral=True)
+        await interaction.followup.send(f"⚠️ Could not post in Take-Schedule channel: {e}\n\n**Full Error:** {type(e).__name__}: {str(e)}", ephemeral=True)
     
     # Post in the channel where command was used (without button)
     try:
@@ -1932,11 +1975,12 @@ async def event_create(
         print(f"❌ Error posting to current channel: {e}")
         await interaction.followup.send(f"⚠️ Could not post in current channel: {e}", ephemeral=True)
     
-    # Send final status summary
+    # Send final status summary with debug info
     if posted_to_schedule:
         await interaction.followup.send("✅ Event created successfully and posted to both channels! Reminder will ping captains 10 minutes before start.", ephemeral=True)
     else:
-        await interaction.followup.send("⚠️ Event created but could NOT post to Take-Schedule channel. Posted to current channel only. Please check channel permissions!", ephemeral=True)
+        debug_info = f"Take-Schedule Channel ID: {CHANNEL_IDS['take_schedule']}\nJudge Role ID: {ROLE_IDS['judge']}"
+        await interaction.followup.send(f"⚠️ Event created but could NOT post to Take-Schedule channel. Posted to current channel only.\n\n**Debug Info:**\n{debug_info}\n\nPlease check:\n1. Channel exists and bot has access\n2. Bot has 'Send Messages' and 'Embed Links' permissions\n3. Judge role exists", ephemeral=True)
 
 @tree.command(name="event-result", description="Add event results (Head Organizer/Judge only)")
 @app_commands.describe(
