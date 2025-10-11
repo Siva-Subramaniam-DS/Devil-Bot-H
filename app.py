@@ -2816,14 +2816,16 @@ async def general_tie_breaker(
 async def add_captain(interaction: discord.Interaction, round: str, captain1: discord.Member, captain2: discord.Member, bracket: str = None):
     """Add two captains to a tournament match and rename the channel with tournament rules."""
     try:
-        # Check permissions - only Head Helper, Head Team, Head Organizer, or BOT can add captains
+        # Check permissions - only Head Helper, Helper Team, Head Organizer, or Bot Owner can add captains
         head_helper_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_helper"])
-        head_team_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_team"])
+        helper_team_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["helper_team"])
         head_organizer_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_organizer"])
-        bot_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["BOT"])
         
-        if not any([head_helper_role, head_team_role, head_organizer_role, bot_role]):
-            await interaction.response.send_message("❌ You don't have permission to use this command. Only Head Helper, Head Team, Head Organizer, or BOT can add captains.", ephemeral=True)
+        # Check if user is bot owner
+        is_bot_owner = interaction.user.id == BOT_OWNER_ID
+        
+        if not any([head_helper_role, helper_team_role, head_organizer_role, is_bot_owner]):
+            await interaction.response.send_message("❌ You don't have permission to use this command. Only Head Helper, Helper Team, Head Organizer, or Bot Owner can add captains.", ephemeral=True)
             return
         
         # Validate round parameter
