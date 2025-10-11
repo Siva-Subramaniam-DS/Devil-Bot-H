@@ -1498,6 +1498,79 @@ async def help_command(interaction: discord.Interaction):
         embed.set_footer(text=f"{ORGANIZATION_NAME}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@tree.command(name="info", description="Display bot information and statistics")
+async def info_command(interaction: discord.Interaction):
+    """Display bot information and server statistics"""
+    try:
+        # Calculate statistics
+        total_members = sum(g.member_count for g in bot.guilds)
+        total_channels = sum(len(g.channels) for g in bot.guilds)
+        
+        # Create embed
+        embed = discord.Embed(
+            title=f"ℹ️ {ORGANIZATION_NAME} Bot Information",
+            description="Tournament management bot for Modern Warships",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # Bot Information
+        embed.add_field(
+            name="🤖 Bot Details",
+            value=f"**Name:** {bot.user.name}\n"
+                  f"**ID:** {bot.user.id}\n"
+                  f"**Latency:** {round(bot.latency * 1000)}ms",
+            inline=True
+        )
+        
+        # Bot Statistics
+        embed.add_field(
+            name="📊 Bot Statistics",
+            value=f"**Servers:** {len(bot.guilds)}\n"
+                  f"**Users:** {total_members:,}\n"
+                  f"**Channels:** {total_channels:,}",
+            inline=True
+        )
+        
+        # Server Information (if in a guild)
+        if interaction.guild:
+            embed.add_field(
+                name="🏠 Current Server",
+                value=f"**Name:** {interaction.guild.name}\n"
+                      f"**Members:** {interaction.guild.member_count:,}\n"
+                      f"**Created:** {interaction.guild.created_at.strftime('%d/%m/%Y')}",
+                inline=True
+            )
+        
+        # Commands Information
+        total_commands = len(bot.tree.get_commands())
+        embed.add_field(
+            name="⚙️ Commands",
+            value=f"**Total Commands:** {total_commands}\n"
+                  f"**Categories:** Tournament, Event Management, Utility, System",
+            inline=False
+        )
+        
+        # Organization Info
+        embed.add_field(
+            name="🏆 Organization",
+            value=f"{ORGANIZATION_NAME}\n"
+                  f"Modern Warships Tournament System",
+            inline=False
+        )
+        
+        # Set thumbnail to bot avatar
+        if bot.user.avatar:
+            embed.set_thumbnail(url=bot.user.avatar.url)
+        
+        embed.set_footer(text=f"Requested by {interaction.user.name}")
+        
+        await interaction.response.send_message(embed=embed)
+        
+    except Exception as e:
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+        print(f"Error in info command: {e}")
+
 @tree.command(name="rules", description="Manage or view tournament rules")
 async def rules_command(interaction: discord.Interaction):
     """Main rules command with role-based functionality"""
@@ -2716,12 +2789,12 @@ async def general_tie_breaker(
     await interaction.response.send_message(embed=embed)
 
 
-@tree.command(name="add-captain", description="Add two captains to a tournament match and rename channel")
+@tree.command(name="add_captain", description="Add two captains to a tournament match and rename the channel")
 @app_commands.describe(
-    bracket="Bracket name (optional)",
-    round="Round (R1-R10, Q, SF, Final)",
-    captain1="First captain",
-    captain2="Second captain"
+    round="Round of the tournament (R1-R10, Q, SF, Final)",
+    captain1="First captain/team for the match",
+    captain2="Second captain/team for the match",
+    bracket="Optional bracket identifier (e.g., A, B, Winner, Loser)"
 )
 @app_commands.choices(
     round=[
@@ -2735,21 +2808,22 @@ async def general_tie_breaker(
         app_commands.Choice(name="R8", value="R8"),
         app_commands.Choice(name="R9", value="R9"),
         app_commands.Choice(name="R10", value="R10"),
-        app_commands.Choice(name="Q (Quarter-Final)", value="Q"),
-        app_commands.Choice(name="SF (Semi-Final)", value="SF"),
+        app_commands.Choice(name="Qualifier", value="Q"),
+        app_commands.Choice(name="Semi Final", value="SF"),
         app_commands.Choice(name="Final", value="Final")
     ]
 )
 async def add_captain(interaction: discord.Interaction, round: str, captain1: discord.Member, captain2: discord.Member, bracket: str = None):
     """Add two captains to a tournament match and rename the channel with tournament rules."""
     try:
-        # Check permissions - only Head Organizer, Head Helper or Helper Team can add captains
-        head_organizer_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_organizer"])
+        # Check permissions - only Head Helper, Head Team, Head Organizer, or BOT can add captains
         head_helper_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_helper"])
-        helper_team_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["helper_team"])
+        head_team_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_team"])
+        head_organizer_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_organizer"])
+        bot_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["BOT"])
         
-        if not any([head_organizer_role, head_helper_role, helper_team_role]):
-            await interaction.response.send_message("❌ You don't have permission to use this command. Only Head Organizer, Head Helper, or Helper Team can add captains.", ephemeral=True)
+        if not any([head_helper_role, head_team_role, head_organizer_role, bot_role]):
+            await interaction.response.send_message("❌ You don't have permission to use this command. Only Head Helper, Head Team, Head Organizer, or BOT can add captains.", ephemeral=True)
             return
         
         # Validate round parameter
@@ -2812,12 +2886,12 @@ async def add_captain(interaction: discord.Interaction, round: str, captain1: di
         
         # Add logo as thumbnail (top right)
         try:
-            with open("a_cbe9bf71e82c25bd6a6ce7ff0b7fc343.gif", "rb") as logo_file:
+            with open("animated_1-2.gif", "rb") as logo_file:
                 logo_data = io.BytesIO(logo_file.read())
                 logo_file = discord.File(logo_data, filename="logo.gif")
                 rules_embed.set_thumbnail(url="attachment://logo.gif")
         except FileNotFoundError:
-            print("Warning: a_cbe9bf71e82c25bd6a6ce7ff0b7fc343.gif not found, skipping logo")
+            print("Warning: animated_1-2.gif not found, skipping logo")
         except Exception as e:
             print(f"Warning: Could not load logo: {e}")
         
@@ -2839,7 +2913,7 @@ async def add_captain(interaction: discord.Interaction, round: str, captain1: di
         
         rules_embed.add_field(
             name="🆘 Need Help?",
-            value="If you require any assistance, please ping <@&1175619471671566406> and they will be happy to assist.",
+            value="If you require any assistance, please ping <@&1242280627991220275> and they will be happy to assist.",
             inline=False
         )
         
@@ -2853,12 +2927,12 @@ async def add_captain(interaction: discord.Interaction, round: str, captain1: di
         
         # Send the rules message with logo
         try:
-            with open("a_cbe9bf71e82c25bd6a6ce7ff0b7fc343.gif", "rb") as logo_file:
+            with open("animated_1-2.gif", "rb") as logo_file:
                 logo_data = io.BytesIO(logo_file.read())
                 logo_file = discord.File(logo_data, filename="logo.gif")
                 await channel.send(embed=rules_embed, file=logo_file)
         except FileNotFoundError:
-            print("Warning: a_cbe9bf71e82c25bd6a6ce7ff0b7fc343.gif not found, sending embed without logo")
+            print("Warning: animated_1-2.gif not found, sending embed without logo")
             await channel.send(embed=rules_embed)
         except Exception as e:
             print(f"Warning: Could not send logo, sending embed without logo: {e}")
