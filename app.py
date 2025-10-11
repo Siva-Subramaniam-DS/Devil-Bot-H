@@ -3100,11 +3100,11 @@ async def attendance(interaction: discord.Interaction, event_name: str):
             )
             return
         
-        # Check if attendance system is enabled (Judges can always use it)
-        if not attendance_enabled and not judge_role:
+        # Check if attendance system is enabled
+        if not attendance_enabled:
             await interaction.response.send_message(
-                "⚠️ The attendance system is currently **disabled** for helpers.\n"
-                "Judges can still mark attendance at any time.",
+                "⚠️ The attendance system is currently **DISABLED**.\n"
+                "Please contact an organizer or bot owner to enable it.",
                 ephemeral=True
             )
             return
@@ -3232,16 +3232,8 @@ async def attendance(interaction: discord.Interaction, event_name: str):
 
 
 @tree.command(name="attendance_control", description="Control attendance system settings (Organizer/Owner only)")
-@app_commands.describe(
-    action="Action to perform: toggle (on/off), clean (clear all data), or status"
-)
-@app_commands.choices(action=[
-    app_commands.Choice(name="Toggle On/Off", value="toggle"),
-    app_commands.Choice(name="Clean All Data", value="clean"),
-    app_commands.Choice(name="Show Status", value="status")
-])
-async def attendance_control(interaction: discord.Interaction, action: app_commands.Choice[str]):
-    """Control attendance system - toggle on/off or clean data (Organizer/Owner only)"""
+async def attendance_control(interaction: discord.Interaction):
+    """Control attendance system with button interface (Organizer/Owner only)"""
     
     global attendance_enabled
     
@@ -3258,126 +3250,204 @@ async def attendance_control(interaction: discord.Interaction, action: app_comma
             )
             return
         
-        if action.value == "toggle":
-            # Toggle attendance system
-            attendance_enabled = not attendance_enabled
-            save_attendance_records()
+        # Create button control panel
+        class AttendanceControlView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=300)  # 5 minute timeout
+                self.update_buttons()
             
-            status_emoji = "✅" if attendance_enabled else "🔴"
-            status_text = "ENABLED" if attendance_enabled else "DISABLED"
-            
-            embed = discord.Embed(
-                title=f"{status_emoji} Attendance System {status_text}",
-                description=f"The attendance system has been **{status_text.lower()}**.",
-                color=discord.Color.green() if attendance_enabled else discord.Color.red(),
-                timestamp=discord.utils.utcnow()
-            )
-            
-            embed.add_field(
-                name="ℹ️ Note",
-                value="Judges can always mark attendance regardless of system status.\nHelpers can only mark attendance when the system is enabled.",
-                inline=False
-            )
-            
-            embed.set_footer(text=f"{ORGANIZATION_NAME}")
-            await interaction.response.send_message(embed=embed)
-            
-        elif action.value == "clean":
-            # Show confirmation before cleaning
-            total_events = len(attendance_records)
-            total_records = sum(len(users) for users in attendance_records.values())
-            
-            embed = discord.Embed(
-                title="⚠️ Clean Attendance Data",
-                description="Are you sure you want to **delete all attendance records**?\nThis action cannot be undone!",
-                color=discord.Color.orange(),
-                timestamp=discord.utils.utcnow()
-            )
-            
-            embed.add_field(
-                name="📊 Current Data",
-                value=f"• **{total_events}** events\n• **{total_records}** total attendance records",
-                inline=False
-            )
-            
-            embed.set_footer(text=f"{ORGANIZATION_NAME}")
-            
-            # Create confirmation buttons
-            class CleanConfirmView(discord.ui.View):
-                def __init__(self):
-                    super().__init__(timeout=30)
-                    self.value = None
+            def update_buttons(self):
+                # Update button states based on attendance_enabled
+                global attendance_enabled
                 
-                @discord.ui.button(label="Confirm Clean", style=discord.ButtonStyle.danger, emoji="🗑️")
-                async def confirm(self, button_interaction: discord.Interaction, button: discord.ui.Button):
-                    if button_interaction.user.id != interaction.user.id:
-                        await button_interaction.response.send_message("❌ Only the command user can confirm this action.", ephemeral=True)
-                        return
-                    
-                    global attendance_records
-                    attendance_records = {}
-                    save_attendance_records()
-                    
-                    success_embed = discord.Embed(
-                        title="✅ Attendance Data Cleaned",
-                        description="All attendance records have been deleted successfully.",
-                        color=discord.Color.green(),
-                        timestamp=discord.utils.utcnow()
-                    )
-                    success_embed.set_footer(text=f"{ORGANIZATION_NAME}")
-                    
-                    await button_interaction.response.edit_message(embed=success_embed, view=None)
-                    self.stop()
+                # Clear existing items and re-add with updated states
+                self.clear_items()
                 
-                @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, emoji="❌")
-                async def cancel(self, button_interaction: discord.Interaction, button: discord.ui.Button):
-                    if button_interaction.user.id != interaction.user.id:
-                        await button_interaction.response.send_message("❌ Only the command user can cancel this action.", ephemeral=True)
-                        return
+                # On button (green if enabled, grey if disabled)
+                on_style = discord.ButtonStyle.success if attendance_enabled else discord.ButtonStyle.secondary
+                on_button = discord.ui.Button(
+                    label="Turn ON",
+                    style=on_style,
+                    emoji="✅",
+                    disabled=attendance_enabled,
+                    custom_id="attendance_on"
+                )
+                on_button.callback = self.turn_on
+                self.add_item(on_button)
+                
+                # Off button (red if disabled, grey if enabled)
+                off_style = discord.ButtonStyle.danger if not attendance_enabled else discord.ButtonStyle.secondary
+                off_button = discord.ui.Button(
+                    label="Turn OFF",
+                    style=off_style,
+                    emoji="🔴",
+                    disabled=not attendance_enabled,
+                    custom_id="attendance_off"
+                )
+                off_button.callback = self.turn_off
+                self.add_item(off_button)
+                
+                # Clean data button
+                clean_button = discord.ui.Button(
+                    label="Clean Data",
+                    style=discord.ButtonStyle.danger,
+                    emoji="🗑️",
+                    custom_id="attendance_clean"
+                )
+                clean_button.callback = self.clean_data
+                self.add_item(clean_button)
+                
+                # Refresh button
+                refresh_button = discord.ui.Button(
+                    label="Refresh",
+                    style=discord.ButtonStyle.primary,
+                    emoji="🔄",
+                    custom_id="attendance_refresh"
+                )
+                refresh_button.callback = self.refresh_status
+                self.add_item(refresh_button)
+            
+            async def turn_on(self, button_interaction: discord.Interaction):
+                # Check permissions again
+                if button_interaction.user.id != interaction.user.id:
+                    await button_interaction.response.send_message("❌ Only the command user can control this panel.", ephemeral=True)
+                    return
+                
+                global attendance_enabled
+                attendance_enabled = True
+                save_attendance_records()
+                
+                # Update the embed and buttons
+                embed = self.create_status_embed()
+                self.update_buttons()
+                await button_interaction.response.edit_message(embed=embed, view=self)
+            
+            async def turn_off(self, button_interaction: discord.Interaction):
+                # Check permissions again
+                if button_interaction.user.id != interaction.user.id:
+                    await button_interaction.response.send_message("❌ Only the command user can control this panel.", ephemeral=True)
+                    return
+                
+                global attendance_enabled
+                attendance_enabled = False
+                save_attendance_records()
+                
+                # Update the embed and buttons
+                embed = self.create_status_embed()
+                self.update_buttons()
+                await button_interaction.response.edit_message(embed=embed, view=self)
+            
+            async def clean_data(self, button_interaction: discord.Interaction):
+                # Check permissions again
+                if button_interaction.user.id != interaction.user.id:
+                    await button_interaction.response.send_message("❌ Only the command user can control this panel.", ephemeral=True)
+                    return
+                
+                # Show confirmation
+                total_events = len(attendance_records)
+                total_records = sum(len(users) for users in attendance_records.values())
+                
+                confirm_embed = discord.Embed(
+                    title="⚠️ Clean Attendance Data",
+                    description="Are you sure you want to **delete all attendance records**?\nThis action cannot be undone!",
+                    color=discord.Color.orange(),
+                    timestamp=discord.utils.utcnow()
+                )
+                
+                confirm_embed.add_field(
+                    name="📊 Current Data",
+                    value=f"• **{total_events}** events\n• **{total_records}** total attendance records",
+                    inline=False
+                )
+                
+                confirm_embed.set_footer(text=f"{ORGANIZATION_NAME}")
+                
+                # Create confirmation buttons
+                class CleanConfirmView(discord.ui.View):
+                    def __init__(self, parent_view):
+                        super().__init__(timeout=30)
+                        self.parent_view = parent_view
                     
-                    cancel_embed = discord.Embed(
-                        title="❌ Action Cancelled",
-                        description="No data was deleted.",
-                        color=discord.Color.blue(),
-                        timestamp=discord.utils.utcnow()
-                    )
-                    cancel_embed.set_footer(text=f"{ORGANIZATION_NAME}")
+                    @discord.ui.button(label="Confirm Clean", style=discord.ButtonStyle.danger, emoji="🗑️")
+                    async def confirm(self, confirm_interaction: discord.Interaction, button: discord.ui.Button):
+                        if confirm_interaction.user.id != interaction.user.id:
+                            await confirm_interaction.response.send_message("❌ Only the command user can confirm this action.", ephemeral=True)
+                            return
+                        
+                        global attendance_records
+                        attendance_records = {}
+                        save_attendance_records()
+                        
+                        success_embed = discord.Embed(
+                            title="✅ Attendance Data Cleaned",
+                            description="All attendance records have been deleted successfully.",
+                            color=discord.Color.green(),
+                            timestamp=discord.utils.utcnow()
+                        )
+                        success_embed.set_footer(text=f"{ORGANIZATION_NAME}")
+                        
+                        # Return to main control panel
+                        main_embed = self.parent_view.create_status_embed()
+                        self.parent_view.update_buttons()
+                        await confirm_interaction.response.edit_message(embed=main_embed, view=self.parent_view)
                     
-                    await button_interaction.response.edit_message(embed=cancel_embed, view=None)
-                    self.stop()
+                    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, emoji="❌")
+                    async def cancel(self, cancel_interaction: discord.Interaction, button: discord.ui.Button):
+                        if cancel_interaction.user.id != interaction.user.id:
+                            await cancel_interaction.response.send_message("❌ Only the command user can cancel this action.", ephemeral=True)
+                            return
+                        
+                        # Return to main control panel
+                        main_embed = self.parent_view.create_status_embed()
+                        self.parent_view.update_buttons()
+                        await cancel_interaction.response.edit_message(embed=main_embed, view=self.parent_view)
+                
+                confirm_view = CleanConfirmView(self)
+                await button_interaction.response.edit_message(embed=confirm_embed, view=confirm_view)
             
-            view = CleanConfirmView()
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            async def refresh_status(self, button_interaction: discord.Interaction):
+                # Update the embed with latest stats
+                embed = self.create_status_embed()
+                self.update_buttons()
+                await button_interaction.response.edit_message(embed=embed, view=self)
             
-        elif action.value == "status":
-            # Show current status
-            status_emoji = "✅" if attendance_enabled else "🔴"
-            status_text = "ENABLED" if attendance_enabled else "DISABLED"
-            
-            total_events = len(attendance_records)
-            total_records = sum(len(users) for users in attendance_records.values())
-            
-            embed = discord.Embed(
-                title=f"{status_emoji} Attendance System Status",
-                description=f"System is currently **{status_text}**",
-                color=discord.Color.green() if attendance_enabled else discord.Color.red(),
-                timestamp=discord.utils.utcnow()
-            )
-            
-            embed.add_field(
-                name="📊 Statistics",
-                value=f"• **{total_events}** events tracked\n• **{total_records}** total attendance records",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="ℹ️ Note",
-                value="Judges can always mark attendance.\nHelpers require system to be enabled.",
-                inline=False
-            )
-            
-            embed.set_footer(text=f"{ORGANIZATION_NAME}")
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            def create_status_embed(self):
+                status_emoji = "✅" if attendance_enabled else "🔴"
+                status_text = "ENABLED" if attendance_enabled else "DISABLED"
+                
+                total_events = len(attendance_records)
+                total_records = sum(len(users) for users in attendance_records.values())
+                
+                embed = discord.Embed(
+                    title=f"🎛️ Attendance System Control Panel",
+                    description=f"**Current Status:** {status_emoji} **{status_text}**",
+                    color=discord.Color.green() if attendance_enabled else discord.Color.red(),
+                    timestamp=discord.utils.utcnow()
+                )
+                
+                embed.add_field(
+                    name="📊 Statistics",
+                    value=f"• **{total_events}** events tracked\n• **{total_records}** total attendance records",
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="ℹ️ How it works",
+                    value=(
+                        "• **ON:** All staff (judges & helpers) can mark attendance\n"
+                        "• **OFF:** No one can mark attendance\n"
+                        "• Use buttons below to control the system"
+                    ),
+                    inline=False
+                )
+                
+                embed.set_footer(text=f"{ORGANIZATION_NAME}")
+                return embed
+        
+        # Create and send the control panel
+        view = AttendanceControlView()
+        embed = view.create_status_embed()
+        await interaction.response.send_message(embed=embed, view=view)
         
     except Exception as e:
         print(f"Error in attendance_control command: {e}")
@@ -3464,21 +3534,61 @@ async def attendance_dashboard(interaction: discord.Interaction, filter_type: ap
             inline=False
         )
         
-        # Top attendees (limit to 10)
+        # Staff attendance table
         if sorted_users:
-            top_10 = sorted_users[:10]
-            leaderboard_text = ""
+            # Create table header
+            table_text = "```\n"
+            table_text += "Staff Name                    | Schedule Done\n"
+            table_text += "─────────────────────────────────────────────\n"
             
-            for idx, (user_id, data) in enumerate(top_10, 1):
-                medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"**{idx}.**"
+            # Add staff entries (show all, not just top 10)
+            for user_id, data in sorted_users:
+                # Truncate name if too long (max 25 chars for alignment)
+                name = data['name'][:25].ljust(25)
+                count = str(data['count']).rjust(4)
                 role_emoji = "⚖️" if data['role'] == "Judge" else "🛠️"
-                leaderboard_text += f"{medal} {role_emoji} {data['name']} - **{data['count']}** events\n"
+                table_text += f"{role_emoji} {name} | {count}\n"
             
+            table_text += "```"
+            
+            # Add the table
             embed.add_field(
-                name="🏆 Top Attendees",
-                value=leaderboard_text,
+                name="📋 Staff Attendance",
+                value=table_text,
                 inline=False
             )
+            
+            # Add detailed list with mentions below the table
+            mention_list = ""
+            for user_id, data in sorted_users:
+                mention_list += f"<@{user_id}> - **{data['count']}** schedules\n"
+            
+            # If the list is too long, split into multiple fields
+            if len(mention_list) > 1024:
+                # Split into chunks
+                chunks = []
+                current_chunk = ""
+                for line in mention_list.split('\n'):
+                    if len(current_chunk) + len(line) + 1 <= 1024:
+                        current_chunk += line + '\n'
+                    else:
+                        chunks.append(current_chunk)
+                        current_chunk = line + '\n'
+                if current_chunk:
+                    chunks.append(current_chunk)
+                
+                for idx, chunk in enumerate(chunks, 1):
+                    embed.add_field(
+                        name=f"👥 Staff Members (Part {idx})" if len(chunks) > 1 else "👥 Staff Members",
+                        value=chunk,
+                        inline=False
+                    )
+            else:
+                embed.add_field(
+                    name="👥 Staff Members",
+                    value=mention_list,
+                    inline=False
+                )
         else:
             embed.add_field(
                 name="ℹ️ No Data",
