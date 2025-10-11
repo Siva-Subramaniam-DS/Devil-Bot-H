@@ -470,7 +470,7 @@ def update_judge_field(embed: discord.Embed, judge_member: discord.Member) -> bo
         # Add new judge field
         embed.add_field(
             name="👨‍⚖️ Judge", 
-            value=f"{judge_member.mention} `@{judge_member.name}`", 
+            value=f"{judge_member.mention}", 
             inline=True
         )
         return True
@@ -680,7 +680,7 @@ class TakeScheduleButton(View):
             
             embed.add_field(
                 name="👨‍⚖️ Judge",
-                value=f"{judge.mention} `@{judge.name}`\n✅ **Added to channel**",
+                value=f"{judge.mention}\n✅ **Added to channel**",
                 inline=True
             )
             
@@ -2195,7 +2195,7 @@ async def event_result(
             attendance_text += f"\n**Results**\n"
             attendance_text += f"🏆 {winner.display_name} ({winner_score}) Vs ({loser_score}) {loser.display_name} 💀\n\n"
             attendance_text += f"**Staffs**\n"
-            attendance_text += f"• Judge: {interaction.user.mention} `@{interaction.user.name}`"
+            attendance_text += f"• Judge: {interaction.user.mention}"
             
             await staff_attendance_channel.send(attendance_text)
         else:
