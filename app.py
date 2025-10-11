@@ -65,6 +65,37 @@ tree = bot.tree
 # Store scheduled events for reminders
 scheduled_events = {}
 
+# Store attendance records
+attendance_records = {}  # {event_name: {user_id: {"user_name": str, "role": str, "timestamp": str}}}
+attendance_enabled = True  # Control flag for attendance system
+
+# Load attendance records from file
+def load_attendance_records():
+    global attendance_records, attendance_enabled
+    try:
+        if os.path.exists('attendance_records.json'):
+            with open('attendance_records.json', 'r') as f:
+                data = json.load(f)
+                attendance_records = data.get('records', {})
+                attendance_enabled = data.get('enabled', True)
+                print(f"Loaded attendance records for {len(attendance_records)} events (Enabled: {attendance_enabled})")
+    except Exception as e:
+        print(f"Error loading attendance records: {e}")
+        attendance_records = {}
+        attendance_enabled = True
+
+# Save attendance records to file
+def save_attendance_records():
+    try:
+        data = {
+            'enabled': attendance_enabled,
+            'records': attendance_records
+        }
+        with open('attendance_records.json', 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving attendance records: {e}")
+
 # Load scheduled events from file on startup
 def load_scheduled_events():
     global scheduled_events
@@ -1431,6 +1462,9 @@ async def on_ready():
     
     # Load scheduled events from file
     load_scheduled_events()
+    
+    # Load attendance records from file
+    load_attendance_records()
     
     # Load tournament rules from file
     load_rules()
@@ -3043,6 +3077,435 @@ async def choose(interaction: discord.Interaction, options: str):
     embed.set_footer(text=f"Powered by • {ORGANIZATION_NAME}")
     
     await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="attendance", description="Mark your attendance for an event (Judge/Helper only)")
+@app_commands.describe(
+    event_name="The name of the event you're attending"
+)
+async def attendance(interaction: discord.Interaction, event_name: str):
+    """Mark attendance for judges and helpers per event with duplicate prevention"""
+    
+    try:
+        # Check if user has Judge, Helper, or Head Helper role
+        user_roles = [role.id for role in interaction.user.roles]
+        judge_role = ROLE_IDS["judge"] in user_roles
+        helper_role = ROLE_IDS["helper_team"] in user_roles
+        head_helper_role = ROLE_IDS["head_helper"] in user_roles
+        
+        if not (judge_role or helper_role or head_helper_role):
+            await interaction.response.send_message(
+                "❌ You need to have **Judge**, **Helper**, or **Head Helper** role to mark attendance.",
+                ephemeral=True
+            )
+            return
+        
+        # Check if attendance system is enabled (Judges can always use it)
+        if not attendance_enabled and not judge_role:
+            await interaction.response.send_message(
+                "⚠️ The attendance system is currently **disabled** for helpers.\n"
+                "Judges can still mark attendance at any time.",
+                ephemeral=True
+            )
+            return
+        
+        # Determine user's role for recording
+        user_role_name = ""
+        if judge_role:
+            user_role_name = "Judge"
+        elif head_helper_role:
+            user_role_name = "Head Helper"
+        elif helper_role:
+            user_role_name = "Helper"
+        
+        # Normalize event name for consistency
+        event_name = event_name.strip()
+        
+        if not event_name:
+            await interaction.response.send_message(
+                "❌ Please provide a valid event name.",
+                ephemeral=True
+            )
+            return
+        
+        # Check for duplicate attendance
+        user_id_str = str(interaction.user.id)
+        
+        if event_name in attendance_records:
+            if user_id_str in attendance_records[event_name]:
+                # User already marked attendance for this event
+                previous_record = attendance_records[event_name][user_id_str]
+                await interaction.response.send_message(
+                    f"⚠️ You have already marked attendance for **{event_name}**.\n"
+                    f"Previous attendance: {previous_record['timestamp']} as {previous_record['role']}",
+                    ephemeral=True
+                )
+                return
+        
+        # Record attendance
+        if event_name not in attendance_records:
+            attendance_records[event_name] = {}
+        
+        # Get current timestamp
+        current_time = datetime.datetime.now(pytz.UTC)
+        timestamp_str = current_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+        
+        attendance_records[event_name][user_id_str] = {
+            "user_name": interaction.user.display_name,
+            "role": user_role_name,
+            "timestamp": timestamp_str
+        }
+        
+        # Save to file
+        save_attendance_records()
+        
+        # Create success embed
+        embed = discord.Embed(
+            title="✅ Attendance Marked",
+            description=f"Your attendance has been recorded for **{event_name}**",
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        embed.add_field(
+            name="👤 User",
+            value=f"{interaction.user.mention} ({interaction.user.display_name})",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🎭 Role",
+            value=user_role_name,
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📅 Event",
+            value=event_name,
+            inline=False
+        )
+        
+        embed.add_field(
+            name="⏰ Time",
+            value=timestamp_str,
+            inline=False
+        )
+        
+        # Count total attendees for this event
+        total_attendees = len(attendance_records[event_name])
+        embed.add_field(
+            name="📊 Total Attendees",
+            value=f"{total_attendees} staff member(s)",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"{ORGANIZATION_NAME}")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        # Optionally send notification to staff attendance channel
+        staff_attendance_channel = interaction.guild.get_channel(CHANNEL_IDS["staff_attendance"])
+        if staff_attendance_channel:
+            notification_embed = discord.Embed(
+                title="📋 Staff Attendance Logged",
+                description=f"**Event:** {event_name}",
+                color=discord.Color.blue(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            notification_embed.add_field(
+                name="Staff Member",
+                value=f"{interaction.user.mention} - {user_role_name}",
+                inline=False
+            )
+            
+            notification_embed.set_footer(text=f"Total Attendees: {total_attendees}")
+            
+            await staff_attendance_channel.send(embed=notification_embed)
+        
+    except Exception as e:
+        print(f"Error in attendance command: {e}")
+        await interaction.response.send_message(
+            "❌ An error occurred while marking attendance. Please try again.",
+            ephemeral=True
+        )
+
+
+@tree.command(name="attendance_control", description="Control attendance system settings (Organizer/Owner only)")
+@app_commands.describe(
+    action="Action to perform: toggle (on/off), clean (clear all data), or status"
+)
+@app_commands.choices(action=[
+    app_commands.Choice(name="Toggle On/Off", value="toggle"),
+    app_commands.Choice(name="Clean All Data", value="clean"),
+    app_commands.Choice(name="Show Status", value="status")
+])
+async def attendance_control(interaction: discord.Interaction, action: app_commands.Choice[str]):
+    """Control attendance system - toggle on/off or clean data (Organizer/Owner only)"""
+    
+    global attendance_enabled
+    
+    try:
+        # Check if user is Bot Owner or has Head Organizer role
+        user_roles = [role.id for role in interaction.user.roles]
+        is_owner = interaction.user.id == BOT_OWNER_ID
+        is_organizer = ROLE_IDS["head_organizer"] in user_roles
+        
+        if not (is_owner or is_organizer):
+            await interaction.response.send_message(
+                "❌ You need to be **Bot Owner** or **Head Organizer** to control attendance settings.",
+                ephemeral=True
+            )
+            return
+        
+        if action.value == "toggle":
+            # Toggle attendance system
+            attendance_enabled = not attendance_enabled
+            save_attendance_records()
+            
+            status_emoji = "✅" if attendance_enabled else "🔴"
+            status_text = "ENABLED" if attendance_enabled else "DISABLED"
+            
+            embed = discord.Embed(
+                title=f"{status_emoji} Attendance System {status_text}",
+                description=f"The attendance system has been **{status_text.lower()}**.",
+                color=discord.Color.green() if attendance_enabled else discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            embed.add_field(
+                name="ℹ️ Note",
+                value="Judges can always mark attendance regardless of system status.\nHelpers can only mark attendance when the system is enabled.",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"{ORGANIZATION_NAME}")
+            await interaction.response.send_message(embed=embed)
+            
+        elif action.value == "clean":
+            # Show confirmation before cleaning
+            total_events = len(attendance_records)
+            total_records = sum(len(users) for users in attendance_records.values())
+            
+            embed = discord.Embed(
+                title="⚠️ Clean Attendance Data",
+                description="Are you sure you want to **delete all attendance records**?\nThis action cannot be undone!",
+                color=discord.Color.orange(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            embed.add_field(
+                name="📊 Current Data",
+                value=f"• **{total_events}** events\n• **{total_records}** total attendance records",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"{ORGANIZATION_NAME}")
+            
+            # Create confirmation buttons
+            class CleanConfirmView(discord.ui.View):
+                def __init__(self):
+                    super().__init__(timeout=30)
+                    self.value = None
+                
+                @discord.ui.button(label="Confirm Clean", style=discord.ButtonStyle.danger, emoji="🗑️")
+                async def confirm(self, button_interaction: discord.Interaction, button: discord.ui.Button):
+                    if button_interaction.user.id != interaction.user.id:
+                        await button_interaction.response.send_message("❌ Only the command user can confirm this action.", ephemeral=True)
+                        return
+                    
+                    global attendance_records
+                    attendance_records = {}
+                    save_attendance_records()
+                    
+                    success_embed = discord.Embed(
+                        title="✅ Attendance Data Cleaned",
+                        description="All attendance records have been deleted successfully.",
+                        color=discord.Color.green(),
+                        timestamp=discord.utils.utcnow()
+                    )
+                    success_embed.set_footer(text=f"{ORGANIZATION_NAME}")
+                    
+                    await button_interaction.response.edit_message(embed=success_embed, view=None)
+                    self.stop()
+                
+                @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, emoji="❌")
+                async def cancel(self, button_interaction: discord.Interaction, button: discord.ui.Button):
+                    if button_interaction.user.id != interaction.user.id:
+                        await button_interaction.response.send_message("❌ Only the command user can cancel this action.", ephemeral=True)
+                        return
+                    
+                    cancel_embed = discord.Embed(
+                        title="❌ Action Cancelled",
+                        description="No data was deleted.",
+                        color=discord.Color.blue(),
+                        timestamp=discord.utils.utcnow()
+                    )
+                    cancel_embed.set_footer(text=f"{ORGANIZATION_NAME}")
+                    
+                    await button_interaction.response.edit_message(embed=cancel_embed, view=None)
+                    self.stop()
+            
+            view = CleanConfirmView()
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            
+        elif action.value == "status":
+            # Show current status
+            status_emoji = "✅" if attendance_enabled else "🔴"
+            status_text = "ENABLED" if attendance_enabled else "DISABLED"
+            
+            total_events = len(attendance_records)
+            total_records = sum(len(users) for users in attendance_records.values())
+            
+            embed = discord.Embed(
+                title=f"{status_emoji} Attendance System Status",
+                description=f"System is currently **{status_text}**",
+                color=discord.Color.green() if attendance_enabled else discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            embed.add_field(
+                name="📊 Statistics",
+                value=f"• **{total_events}** events tracked\n• **{total_records}** total attendance records",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="ℹ️ Note",
+                value="Judges can always mark attendance.\nHelpers require system to be enabled.",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"{ORGANIZATION_NAME}")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+    except Exception as e:
+        print(f"Error in attendance_control command: {e}")
+        await interaction.response.send_message(
+            "❌ An error occurred while processing your request.",
+            ephemeral=True
+        )
+
+
+@tree.command(name="attendance_dashboard", description="View attendance statistics and judge counts")
+@app_commands.describe(
+    filter_type="Filter by role type or show all"
+)
+@app_commands.choices(filter_type=[
+    app_commands.Choice(name="All Staff", value="all"),
+    app_commands.Choice(name="Judges Only", value="judges"),
+    app_commands.Choice(name="Helpers Only", value="helpers")
+])
+async def attendance_dashboard(interaction: discord.Interaction, filter_type: app_commands.Choice[str] = None):
+    """View attendance dashboard with judge and helper counts"""
+    
+    try:
+        # Check if user has permission to view dashboard
+        user_roles = [role.id for role in interaction.user.roles]
+        is_owner = interaction.user.id == BOT_OWNER_ID
+        is_organizer = ROLE_IDS["head_organizer"] in user_roles
+        is_judge = ROLE_IDS["judge"] in user_roles
+        is_helper = ROLE_IDS["head_helper"] in user_roles or ROLE_IDS["helper_team"] in user_roles
+        
+        if not (is_owner or is_organizer or is_judge or is_helper):
+            await interaction.response.send_message(
+                "❌ You need to be a staff member to view the attendance dashboard.",
+                ephemeral=True
+            )
+            return
+        
+        filter_value = filter_type.value if filter_type else "all"
+        
+        # Collect statistics
+        user_attendance_count = {}  # {user_id: {"name": str, "role": str, "count": int, "events": []}}
+        
+        for event_name, attendees in attendance_records.items():
+            for user_id, user_data in attendees.items():
+                role = user_data['role']
+                
+                # Apply filter
+                if filter_value == "judges" and role != "Judge":
+                    continue
+                elif filter_value == "helpers" and role not in ["Helper", "Head Helper"]:
+                    continue
+                
+                if user_id not in user_attendance_count:
+                    user_attendance_count[user_id] = {
+                        "name": user_data['user_name'],
+                        "role": role,
+                        "count": 0,
+                        "events": []
+                    }
+                
+                user_attendance_count[user_id]["count"] += 1
+                user_attendance_count[user_id]["events"].append(event_name)
+        
+        # Sort by count (descending)
+        sorted_users = sorted(user_attendance_count.items(), key=lambda x: x[1]["count"], reverse=True)
+        
+        # Create embed
+        status_emoji = "✅" if attendance_enabled else "🔴"
+        filter_title = {"all": "All Staff", "judges": "Judges", "helpers": "Helpers"}[filter_value]
+        
+        embed = discord.Embed(
+            title=f"📊 Attendance Dashboard - {filter_title}",
+            description=f"System Status: {status_emoji} {'ENABLED' if attendance_enabled else 'DISABLED'}",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # Overall statistics
+        total_events = len(attendance_records)
+        total_records = sum(len(users) for users in attendance_records.values())
+        
+        embed.add_field(
+            name="📈 Overall Statistics",
+            value=f"• **{total_events}** events tracked\n• **{total_records}** total records\n• **{len(sorted_users)}** staff members",
+            inline=False
+        )
+        
+        # Top attendees (limit to 10)
+        if sorted_users:
+            top_10 = sorted_users[:10]
+            leaderboard_text = ""
+            
+            for idx, (user_id, data) in enumerate(top_10, 1):
+                medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"**{idx}.**"
+                role_emoji = "⚖️" if data['role'] == "Judge" else "🛠️"
+                leaderboard_text += f"{medal} {role_emoji} {data['name']} - **{data['count']}** events\n"
+            
+            embed.add_field(
+                name="🏆 Top Attendees",
+                value=leaderboard_text,
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="ℹ️ No Data",
+                value="No attendance records found.",
+                inline=False
+            )
+        
+        # Role breakdown
+        judge_count = sum(1 for _, data in sorted_users if data['role'] == "Judge")
+        helper_count = sum(1 for _, data in sorted_users if data['role'] in ["Helper", "Head Helper"])
+        
+        embed.add_field(
+            name="👥 Staff Breakdown",
+            value=f"• ⚖️ Judges: **{judge_count}**\n• 🛠️ Helpers: **{helper_count}**",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"{ORGANIZATION_NAME}")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+    except Exception as e:
+        print(f"Error in attendance_dashboard command: {e}")
+        await interaction.response.send_message(
+            "❌ An error occurred while generating the dashboard.",
+            ephemeral=True
+        )
 
 
 if __name__ == "__main__":
