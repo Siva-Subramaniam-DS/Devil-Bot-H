@@ -1789,44 +1789,23 @@ async def event_create(
     
     if template_image and ENABLE_POSTER_GENERATION:
         try:
-            import asyncio
-            import concurrent.futures
-            
-            # Create poster with timeout to prevent hanging
-            def create_poster_sync():
-                return create_event_poster(
-                    template_image, 
-                    round_label, 
-                    team_1_captain.name, 
-                    team_2_captain.name, 
-                    time_info['utc_time_simple'],
-                    f"{date:02d}/{month:02d}/{current_year}",
-                    tournament
-                )
-            
-            # Use asyncio to add timeout to poster creation
-            loop = asyncio.get_event_loop()
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(create_poster_sync)
-                try:
-                    # Wait maximum 5 seconds for poster creation (should be much faster with local fonts)
-                    poster_image = await asyncio.wait_for(
-                        loop.run_in_executor(None, lambda: future.result()), 
-                        timeout=5.0
-                    )
-                    if poster_image:
-                        # Keep poster path for later cleanup/deletion
-                        scheduled_events[event_id]['poster_path'] = poster_image
-                        save_scheduled_events()
-                        print(f"✅ Poster created successfully for event {event_id}")
-                    else:
-                        print(f"⚠️ Poster creation returned None for event {event_id}")
-                except asyncio.TimeoutError:
-                    print(f"⏰ Poster creation timed out for event {event_id} - continuing without poster")
-                    poster_image = None
-                    # Cancel the future
-                    future.cancel()
-                    
+            # Create poster with text overlays (using local fonts only)
+            poster_image = create_event_poster(
+                template_image, 
+                round_label, 
+                team_1_captain.name, 
+                team_2_captain.name, 
+                time_info['utc_time_simple'],
+                f"{date:02d}/{month:02d}/{current_year}",
+                tournament
+            )
+            if poster_image:
+                # Keep poster path for later cleanup/deletion
+                scheduled_events[event_id]['poster_path'] = poster_image
+                save_scheduled_events()
+                print(f"✅ Poster created successfully for event {event_id}")
+            else:
+                print(f"⚠️ Poster creation returned None for event {event_id}")
         except Exception as e:
             print(f"Error creating poster: {e}")
             poster_image = None
