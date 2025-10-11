@@ -1087,7 +1087,7 @@ def get_random_template():
             return random.choice(image_files)
     return None
 
-def create_event_poster(template_path: str, round_label: str, team1_captain: str, team2_captain: str, utc_time: str, date_str: str = None, tournament_name: str = "King of the Seas", server_name: str = "The Devil's Spot") -> str:
+def create_event_poster(template_path: str, round_label: str, team1_captain: str, team2_captain: str, utc_time: str, date_str: str = None, tournament_name: str = "King of the Seas", server_name: str = ORGANIZATION_NAME) -> str:
     """Create event poster with text overlays using Google Fonts and improved error handling"""
     print(f"Creating poster with template: {template_path}")
     
@@ -1134,14 +1134,15 @@ def create_event_poster(template_path: str, round_label: str, team1_captain: str
             time_size = int(height * 0.07)
             tiny_size = int(height * 0.05)
             
-            # Load fonts using your local fonts from Fonts/ folder
+            # Load fonts with Google Fonts fallback
             try:
-                # Use your local fonts directly - no Google Fonts needed
-                font_title = get_font_with_fallbacks("DS-DIGIB", title_size, "bold")     # Bold digital font for titles
-                font_round = get_font_with_fallbacks("DS-DIGIB", round_size, "bold")     # Same for round
-                font_vs = get_font_with_fallbacks("Capture it", vs_size, "bold")         # Unique display font from Fonts/capture_it
-                font_time = get_font_with_fallbacks("DS-DIGI", time_size)                # Monospace digital font for time
-                font_tiny = get_font_with_fallbacks("DS-DIGIT", tiny_size)               # Small digital text
+                # Try Google Fonts first, then fallback to local/system fonts
+                font_title = get_font_with_fallbacks("Orbitron", title_size, "bold")  # Modern display font
+                font_round = get_font_with_fallbacks("Orbitron", round_size, "bold")  # Same for round
+                # Use a unique bundled font for player names so styling is consistent regardless of Discord nickname styling
+                font_vs = get_font_with_fallbacks("Capture it", vs_size, "bold")       # Unique display font from Fonts/capture_it
+                font_time = get_font_with_fallbacks("Share Tech Mono", time_size)     # Monospace for time
+                font_tiny = get_font_with_fallbacks("Roboto", tiny_size)              # Small text
                 
                 print("Fonts loaded successfully")
                 
