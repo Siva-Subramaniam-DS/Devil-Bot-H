@@ -65,6 +65,9 @@ tree = bot.tree
 # Store scheduled events for reminders
 scheduled_events = {}
 
+# Store staff statistics for leaderboard
+staff_stats = {}
+
 
 # Load scheduled events from file on startup
 def load_scheduled_events():
@@ -140,6 +143,71 @@ def load_rules():
     except Exception as e:
         print(f"Error loading tournament rules: {e}")
         tournament_rules = {}
+
+def load_staff_stats():
+    """Load staff statistics from persistence storage"""
+    global staff_stats
+    try:
+        # Check for new staff_stats.json first
+        if os.path.exists('staff_stats.json'):
+            with open('staff_stats.json', 'r', encoding='utf-8') as f:
+                staff_stats = json.load(f)
+                print(f"Loaded staff statistics from staff_stats.json")
+        # Legacy support: migrated from judge_stats.json if needed
+        elif os.path.exists('judge_stats.json'):
+            with open('judge_stats.json', 'r', encoding='utf-8') as f:
+                legacy_stats = json.load(f)
+                staff_stats = legacy_stats
+                print(f"Migrated statistics from judge_stats.json")
+                save_staff_stats()
+        else:
+            staff_stats = {}
+            print("No existing staff stats file found")
+    except Exception as e:
+        print(f"Error loading staff stats: {e}")
+        staff_stats = {}
+
+def save_staff_stats():
+    """Save staff statistics to persistent storage"""
+    try:
+        with open('staff_stats.json', 'w', encoding='utf-8') as f:
+            json.dump(staff_stats, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"Error saving staff stats: {e}")
+        return False
+
+def reset_staff_stats():
+    """Reset all staff statistics"""
+    global staff_stats
+    staff_stats = {}
+    return save_staff_stats()
+
+def update_staff_stats(user: discord.Member, role_type: str):
+    """Update stats for a staff member (judge or recorder)"""
+    global staff_stats
+    user_id = str(user.id)
+    
+    if user_id not in staff_stats:
+        staff_stats[user_id] = {
+            "name": user.display_name,
+            "judge_count": 0,
+            "recorder_count": 0,
+            "total_count": 0
+        }
+    
+    # Update count based on role
+    if role_type == "judge":
+        staff_stats[user_id]["judge_count"] = staff_stats[user_id].get("judge_count", 0) + 1
+    elif role_type == "recorder":
+        staff_stats[user_id]["recorder_count"] = staff_stats[user_id].get("recorder_count", 0) + 1
+        
+    # Update total and metadata
+    staff_stats[user_id]["total_count"] = staff_stats[user_id].get("judge_count", 0) + staff_stats[user_id].get("recorder_count", 0)
+    staff_stats[user_id]["name"] = user.display_name
+    staff_stats[user_id]["last_active"] = datetime.datetime.utcnow().isoformat()
+    
+    save_staff_stats()
 
 def save_rules():
     """Save rules to persistent storage"""
@@ -819,6 +887,61 @@ async def display_rules(interaction: discord.Interaction):
     except Exception as e:
         print(f"Error displaying rules: {e}")
         await interaction.response.send_message("❌ An error occurred while displaying rules.", ephemeral=False)
+
+class JudgeLeaderboardView(View):
+    """View for staff leaderboard with reset functionality"""
+    
+    def __init__(self, show_reset: bool = False):
+        super().__init__(timeout=300)
+        self.show_reset = show_reset
+        
+        if not show_reset:
+            self.clear_items()
+    
+    @discord.ui.button(label="🔄 Reset Leaderboard", style=discord.ButtonStyle.danger, emoji="🔄")
+    async def reset_leaderboard(self, interaction: discord.Interaction, button: Button):
+        # Double-check permissions
+        head_organizer_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_organizer"])
+        if not head_organizer_role:
+            await interaction.response.send_message("❌ You need **Head Organizer** role to reset the leaderboard.", ephemeral=True)
+            return
+        
+        confirm_view = ConfirmResetView()
+        await interaction.response.send_message(
+            "⚠️ **WARNING**: This will permanently delete all staff statistics!\n\n"
+            "Are you sure you want to reset the staff leaderboard?",
+            view=confirm_view,
+            ephemeral=True
+        )
+
+class ConfirmResetView(View):
+    """Confirmation view for resetting staff leaderboard"""
+    
+    def __init__(self):
+        super().__init__(timeout=60)
+    
+    @discord.ui.button(label="✅ Yes, Reset", style=discord.ButtonStyle.danger, emoji="✅")
+    async def confirm_reset(self, interaction: discord.Interaction, button: Button):
+        try:
+            reset_staff_stats()
+            await interaction.response.edit_message(
+                content="✅ **Staff leaderboard has been reset successfully!**",
+                view=None
+            )
+            print(f"Staff leaderboard reset by {interaction.user.display_name}")
+        except Exception as e:
+            print(f"Error resetting staff leaderboard: {e}")
+            await interaction.response.edit_message(
+                content="❌ **Error resetting leaderboard.**",
+                view=None
+            )
+    
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary, emoji="❌")
+    async def cancel_reset(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.edit_message(
+            content="✅ **Reset cancelled.**",
+            view=None
+        )
 
 # ===========================================================================================
 # NOTIFICATION AND REMINDER SYSTEM (Ten-minute reminder for captains and judge)
@@ -1501,6 +1624,9 @@ async def on_ready():
     # Load tournament rules from file
     load_rules()
     
+    # Load staff stats from file
+    load_staff_stats()
+    
     # Reschedule cleanups for any events already marked finished_on if needed (optional)
     try:
         for ev_id, data in list(scheduled_events.items()):
@@ -1555,6 +1681,57 @@ async def help_command(interaction: discord.Interaction):
     except Exception as e:
         print(f"Error in help command: {e}")
         # Fallback response
+        await interaction.response.send_message("❌ An error occurred while generating help.", ephemeral=True)
+
+@tree.command(name="staff-leaderboard", description="Display the staff activity leaderboard")
+async def staff_leaderboard(interaction: discord.Interaction):
+    """Command to display the staff activity leaderboard for judges and recorders"""
+    try:
+        if not staff_stats:
+            await interaction.response.send_message("📊 The staff leaderboard is currently empty.", ephemeral=False)
+            return
+
+        # Sort staff by total count (judge + recorder)
+        sorted_staff = sorted(
+            staff_stats.items(), 
+            key=lambda item: item[1].get('total_count', 0), 
+            reverse=True
+        )
+        
+        # Take top 15
+        top_staff = sorted_staff[:15]
+        
+        # Build ASCII table
+        table_header = "Rank | Name            | Judge | Rec | Total"
+        table_separator = "-----|-----------------|-------|-----|------"
+        table_rows = []
+        
+        for i, (user_id, stats) in enumerate(top_staff, 1):
+            name = stats.get('name', 'Unknown')[:15].ljust(15)
+            judge = str(stats.get('judge_count', 0)).rjust(5)
+            rec = str(stats.get('recorder_count', 0)).rjust(3)
+            total = str(stats.get('total_count', 0)).rjust(4)
+            table_rows.append(f"{str(i).rjust(4)} | {name} | {judge} | {rec} | {total}")
+            
+        full_table = f"{table_header}\n{table_separator}\n" + "\n".join(table_rows)
+        
+        embed = discord.Embed(
+            title="🏆 Staff Activity Leaderboard",
+            description=f"Top {len(top_staff)} most active staff members:\n```\n{full_table}\n```",
+            color=discord.Color.gold(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.set_footer(text="Devil-Bot Activity Tracking")
+        
+        # Check if user is Head Organizer to show reset button
+        head_organizer_role = discord.utils.get(interaction.user.roles, id=ROLE_IDS["head_organizer"])
+        view = JudgeLeaderboardView(show_reset=bool(head_organizer_role))
+        
+        await interaction.response.send_message(embed=embed, view=view)
+        
+    except Exception as e:
+        print(f"Error in staff-leaderboard command: {e}")
+        await interaction.response.send_message("❌ An error occurred while generating the leaderboard.", ephemeral=True)
         embed = discord.Embed(
             title="🎯 Command Guide",
             description="Error loading command information. Please try again.",
@@ -1985,6 +2162,7 @@ async def event_create(
     round="Round name (e.g., Semi-Final, Final, Quarter-Final)",
     group="Group assignment (A-J) - optional",
     remarks="Remarks about the match (e.g., ggwp, close match)",
+    recorder="Staff member who recorded the match (optional)",
     ss_1="Screenshot 1 (upload)",
     ss_2="Screenshot 2 (upload)",
     ss_3="Screenshot 3 (upload)",
@@ -2023,6 +2201,7 @@ async def event_result(
     round: str,
     group: app_commands.Choice[str] = None,
     remarks: str = "ggwp",
+    recorder: discord.Member = None,
     ss_1: discord.Attachment = None,
     ss_2: discord.Attachment = None,
     ss_3: discord.Attachment = None,
@@ -2090,7 +2269,14 @@ async def event_result(
     # Staff Section
     staff_text = f"👨‍⚖️ **Staffs**\n"
     staff_text += f"▪ Judge: {interaction.user.mention}"
+    if recorder:
+        staff_text += f"\n▪ Recorder: {recorder.mention}"
     embed.add_field(name="", value=staff_text, inline=False)
+    
+    # Update staff statistics
+    update_staff_stats(interaction.user, "judge")
+    if recorder:
+        update_staff_stats(recorder, "recorder")
     
     # Add spacing
     embed.add_field(name="\u200b", value="\u200b", inline=False)
