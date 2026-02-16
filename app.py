@@ -1600,7 +1600,7 @@ async def on_message(message):
         
     elif command == '?b':
         # Challonge URL response
-        response = await message.channel.send("https://challonge.com/King_of_the_Seas_S3")
+        response = await message.channel.send("https://challonge.com/Pandora_12")
         # Delete the original command message
         try:
             await message.delete()
